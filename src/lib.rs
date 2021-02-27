@@ -74,9 +74,20 @@ pub enum Error {
     #[error(transparent)]
     Oneshot(#[from] tokio::sync::oneshot::error::RecvError),
 
-    /// Error generated whilst attempting to read lines from the socket.
+    /// Generic variant for errors created in user code.
     #[error(transparent)]
-    Lines(#[from] tokio_util::codec::LinesCodecError),
+    Boxed(#[from] Box<dyn std::error::Error + Send>),
+}
+
+impl Error {
+    /// Helper function to `Box` an error implementation.
+    ///
+    /// Ssocket handlers can call `map_err(Error::boxed)?` to propagate
+    /// foreign errors.
+    pub fn boxed(e: impl std::error::Error + Send + 'static) -> Self {
+        let err: Box<dyn std::error::Error + Send> = Box::new(e);
+        Error::from(err)
+    }
 }
 
 /// Result type returned by the library.

@@ -60,7 +60,7 @@ async fn main() -> Result<()> {
 
                 let mut lines = FramedRead::new(reader, LinesCodec::new());
                 while let Some(line) = lines.next().await {
-                    let line = line?;
+                    let line = line.map_err(Error::boxed)?;
                     //log::info!("Supervisor got line {}", line);
                     match serde_json::from_str::<Message>(&line)? {
                         Message::Request(mut req) => {

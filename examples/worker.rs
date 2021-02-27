@@ -85,7 +85,7 @@ async fn main() -> Result<()> {
             Box::new(WorkerService {});
         let server = Server::new(vec![&service]);
         while let Some(line) = lines.next().await {
-            let line = line?;
+            let line = line.map_err(Error::boxed)?;
             println!("Line {:?}", line);
             match serde_json::from_str::<Message>(&line)? {
                 Message::Request(mut req) => {
