@@ -1,6 +1,6 @@
 use std::sync::Mutex;
 
-use psup::{Error, Result, Worker, Message};
+use psup::{Error, Result, Worker};
 use tokio::io::AsyncWriteExt;
 use tokio_util::codec::{FramedRead, LinesCodec};
 use futures::stream::StreamExt;
@@ -15,6 +15,19 @@ use once_cell::sync::OnceCell;
 
 use async_trait::async_trait;
 use log::{debug, error, info};
+
+/// Encodes whether an IPC message is a request or 
+/// a response so that we can do bi-directional 
+/// communication over the same socket.
+#[derive(Debug, Serialize, Deserialize)]
+pub enum Message {
+    /// RPC request message.
+    #[serde(rename = "request")]
+    Request(Request),
+    /// RPC response message.
+    #[serde(rename = "response")]
+    Response(Response),
+}
 
 fn worker_state() -> &'static Mutex<WorkerState> {
     static INSTANCE: OnceCell<Mutex<WorkerState>> = OnceCell::new();

@@ -1,4 +1,4 @@
-use psup::{Error, Result, SupervisorBuilder, Message};
+use psup::{Error, Result, SupervisorBuilder};
 use tokio::io::AsyncWriteExt;
 use tokio_util::codec::{FramedRead, LinesCodec};
 use futures::stream::StreamExt;
@@ -11,6 +11,19 @@ use json_rpc2::{
     futures::{Server, Service},
     Request, Response,
 };
+
+/// Encodes whether an IPC message is a request or 
+/// a response so that we can do bi-directional 
+/// communication over the same socket.
+#[derive(Debug, Serialize, Deserialize)]
+pub enum Message {
+    /// RPC request message.
+    #[serde(rename = "request")]
+    Request(Request),
+    /// RPC response message.
+    #[serde(rename = "response")]
+    Response(Response),
+}
 
 /// Message sent to the supervisor when a worker
 /// is spawned and has connected to the IPC socket.
