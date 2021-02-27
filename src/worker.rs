@@ -1,10 +1,9 @@
 //! Worker is a process performing a long-running task.
+use std::path::PathBuf;
 use std::io::{self, BufRead};
 use futures::Future;
 use tokio::net::UnixStream;
 use super::{WorkerInfo, Result};
-
-//pub(crate) const SHUTDOWN: &str = "shutdown";
 
 /// Worker process handler.
 pub struct Worker<H, F> 
@@ -37,14 +36,22 @@ impl<H, F> Worker<H, F>
     /// Read worker information from stdin.
     fn read(&self) -> Result<Option<WorkerInfo>> {
         let stdin = io::stdin();
-        let mut info = None;
+        let mut id = None;
+        let mut path = None;
         for line in stdin.lock().lines() {
             if let Some(line) = line.ok() {
-                info = Some(serde_json::from_str::<WorkerInfo>(&line).unwrap());
+                if id.is_none() {
+                    id = Some(line);
+                } else {
+                    path = Some(line);
+                }
+            }
+
+            if id.is_some() && path.is_some() {
                 break;
             }
         }
-        Ok(info)
+        Ok(Some(WorkerInfo {id: id.unwrap(), path: PathBuf::from(path.unwrap())}))
     }
 
     /// Connect to the supervisor socket.

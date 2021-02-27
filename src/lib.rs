@@ -10,7 +10,7 @@
 //! they die without being shutdown by the supervisor.
 //!
 //! ```ignore
-//! use psup::{Result, SupervisorBuilder};
+//! use psup::{Result, Task, SupervisorBuilder};
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<()> {
@@ -20,8 +20,8 @@
 //!            // Handle worker connections here
 //!        }))
 //!        .path(std::env::temp_dir().join("supervisor.sock"))
-//!        .add_daemon(worker_cmd.to_string(), vec![])
-//!        .add_daemon(worker_cmd.to_string(), vec![])
+//!        .add_daemon(Task::new(worker_cmd))
+//!        .add_daemon(Task::new(worker_cmd))
 //!        .build();
 //!    supervisor.run().await?;
 //!    // Block the process here and do your work.
@@ -60,10 +60,6 @@ pub enum Error {
     #[error(transparent)]
     Io(#[from] std::io::Error),
 
-    /// JSON serialize/deserialize errors.
-    #[error(transparent)]
-    Json(#[from] serde_json::Error),
-
     /// Error whilst sending bind notifications.
     #[error(transparent)]
     Oneshot(#[from] tokio::sync::oneshot::error::RecvError),
@@ -91,7 +87,7 @@ mod worker;
 mod supervisor;
 
 pub use worker::Worker;
-pub use supervisor::{Supervisor, SupervisorBuilder};
+pub use supervisor::{Task, Supervisor, SupervisorBuilder};
 
 /// Message sent over stdin when launching a worker.
 #[derive(Debug, Serialize, Deserialize)]

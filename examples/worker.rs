@@ -85,12 +85,12 @@ async fn main() -> Result<()> {
 
         // Send a notification to the supervisor so that it knows
         // this worker is ready
-        let params = serde_json::to_value(Connected { id: info.id })?;
+        let params = serde_json::to_value(Connected { id: info.id }).map_err(Error::boxed)?;
         let req =
             Message::Request(Request::new_notification("connected", Some(params)));
         //let req =
             //Message::Request(Request::new_reply(CONNECTED, Some(params)));
-        let msg = format!("{}\n", serde_json::to_string(&req)?);
+        let msg = format!("{}\n", serde_json::to_string(&req).map_err(Error::boxed)?);
         writer.write_all(msg.as_bytes()).await?;
 
         let mut lines = FramedRead::new(reader, LinesCodec::new());
@@ -100,7 +100,7 @@ async fn main() -> Result<()> {
         while let Some(line) = lines.next().await {
             let line = line.map_err(Error::boxed)?;
             println!("Line {:?}", line);
-            match serde_json::from_str::<Message>(&line)? {
+            match serde_json::from_str::<Message>(&line).map_err(Error::boxed)? {
                 Message::Request(mut req) => {
                     info!("{:?}", req);
                     let res = server.serve(&mut req, worker_state()).await;
@@ -109,7 +109,7 @@ async fn main() -> Result<()> {
                         let msg = Message::Response(response);
                         writer
                             .write_all(
-                                format!("{}\n", serde_json::to_string(&msg)?)
+                                format!("{}\n", serde_json::to_string(&msg).map_err(Error::boxed)?)
                                     .as_bytes(),
                             )
                             .await?;

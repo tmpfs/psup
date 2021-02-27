@@ -1,4 +1,4 @@
-use psup::{Error, Result, SupervisorBuilder};
+use psup::{Error, Result, Task, SupervisorBuilder};
 use tokio::io::AsyncWriteExt;
 use tokio_util::codec::{FramedRead, LinesCodec};
 use futures::stream::StreamExt;
@@ -62,7 +62,7 @@ async fn main() -> Result<()> {
     pretty_env_logger::init();
 
     let worker_cmd = "cargo";
-    let args = vec!["run", "--example", "worker", "--all-features"];
+    let args = vec!["run", "--example", "worker"];
     let supervisor = SupervisorBuilder::new(Box::new(|stream| {
             let (reader, mut writer) = stream.into_split();
             tokio::task::spawn(async move {
@@ -74,8 +74,7 @@ async fn main() -> Result<()> {
                 let mut lines = FramedRead::new(reader, LinesCodec::new());
                 while let Some(line) = lines.next().await {
                     let line = line.map_err(Error::boxed)?;
-                    //log::info!("Supervisor got line {}", line);
-                    match serde_json::from_str::<Message>(&line)? {
+                    match serde_json::from_str::<Message>(&line).map_err(Error::boxed)? {
                         Message::Request(mut req) => {
                             debug!("{:?}", req);
                             let res = server
@@ -88,7 +87,7 @@ async fn main() -> Result<()> {
                                     .write_all(
                                         format!(
                                             "{}\n",
-                                            serde_json::to_string(&msg)?
+                                            serde_json::to_string(&msg).map_err(Error::boxed)?
                                         )
                                         .as_bytes(),
                                     )
@@ -109,8 +108,8 @@ async fn main() -> Result<()> {
             });
         }))
         .path(std::env::temp_dir().join("supervisor.sock"))
-        .add_daemon(worker_cmd.to_string(), args.clone())
-        .add_daemon(worker_cmd.to_string(), args.clone())
+        .add_daemon(Task::new(worker_cmd).args(args.clone()))
+        .add_daemon(Task::new(worker_cmd).args(args.clone()))
         .build();
     supervisor.run().await?;
 

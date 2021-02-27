@@ -1,5 +1,5 @@
 //! Supervisor manages a collection of worker processes.
-use std::collections::hash_map::DefaultHasher;
+use std::collections::{HashMap, hash_map::DefaultHasher};
 use std::hash::Hasher;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -15,7 +15,7 @@ use log::{error, info, warn};
 use once_cell::sync::OnceCell;
 use rand::Rng;
 
-use super::{WorkerInfo, Result};
+use super::Result;
 
 /// Get the supervisor state.
 fn supervisor_state() -> &'static Mutex<SupervisorState> {
@@ -23,10 +23,49 @@ fn supervisor_state() -> &'static Mutex<SupervisorState> {
     INSTANCE.get_or_init(|| Mutex::new(SupervisorState { workers: vec![] }))
 }
 
+/// Defines a worker process command.
+#[derive(Debug, Clone)]
+pub struct Task {
+    cmd: String,
+    args: Vec<String>,
+    envs: HashMap<String, String>,
+}
+
+impl Task {
+    /// Create a new task.
+    pub fn new(cmd: &str) -> Self {
+        Self {
+            cmd: cmd.to_string(),
+            args: Vec::new(),
+            envs: HashMap::new(),
+        } 
+    }
+
+    /// Set command arguments.
+    pub fn args(mut self, args: Vec<&str>) -> Self {
+        let args = args.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        self.args = args;
+        self
+    }
+
+    /// Set command environment variables.
+    pub fn envs<I, K, V>(mut self, vars: I) -> Self
+        where
+            I: IntoIterator<Item = (K, V)>,
+            K: AsRef<str>,
+            V: AsRef<str> {
+        let envs = vars.into_iter()
+            .map(|(k, v)| (k.as_ref().to_string(), v.as_ref().to_string()))
+            .collect::<HashMap<_, _>>();
+        self.envs = envs;
+        self 
+    }
+}
+
 /// Build a supervisor.
 pub struct SupervisorBuilder {
     socket: PathBuf,
-    commands: Vec<(String, Vec<String>, bool)>,
+    commands: Vec<(Task, bool)>,
     ipc_handler: Box<dyn Fn(UnixStream) + Send + Sync>,
 }
 
@@ -51,16 +90,14 @@ impl SupervisorBuilder {
     ///
     /// Daemon worker processes are restarted if they exit without being 
     /// explicitly shutdown by the supervisor.
-    pub fn add_daemon(mut self, cmd: String, args: Vec<&str>) -> Self {
-        let owned = args.iter().map(|s| s.to_string()).collect::<Vec<_>>();
-        self.commands.push((cmd, owned, true));
+    pub fn add_daemon(mut self, task: Task) -> Self {
+        self.commands.push((task, true));
         self
     }
 
     /// Add a worker process.
-    pub fn add_worker(mut self, cmd: String, args: Vec<&str>) -> Self {
-        let owned = args.iter().map(|s| s.to_string()).collect::<Vec<_>>();
-        self.commands.push((cmd, owned, false));
+    pub fn add_worker(mut self, task: Task) -> Self {
+        self.commands.push((task, false));
         self
     }
 
@@ -77,7 +114,7 @@ impl SupervisorBuilder {
 /// Supervisor manages long-running worker processes.
 pub struct Supervisor {
     socket: PathBuf,
-    commands: Vec<(String, Vec<String>, bool)>,
+    commands: Vec<(Task, bool)>,
     ipc_handler: Arc<Box<dyn Fn(UnixStream) + Send + Sync>>,
 }
 
@@ -100,8 +137,8 @@ impl Supervisor {
         let _ = rx.await?;
         info!("Supervisor is listening {}", self.socket.display());
 
-        for (cmd, args, daemon) in self.commands.iter() {
-            spawn_worker(cmd.to_string(), args.clone(), daemon.clone(), self.socket.clone());
+        for (task, daemon) in self.commands.iter() {
+            spawn_worker(task.clone(), daemon.clone(), self.socket.clone());
         }
 
         Ok(())
@@ -132,8 +169,7 @@ impl SupervisorState {
 
 #[derive(Debug)]
 struct WorkerState {
-    cmd: String,
-    args: Vec<String>,
+    task: Task,
     id: String,
     socket_path: PathBuf,
     pid: u32,
@@ -158,10 +194,10 @@ impl Eq for WorkerState {}
 fn restart(worker: WorkerState) {
     info!("Restarting worker {}", worker.id);
     // TODO: retry on fail with backoff and retry limit
-    spawn_worker(worker.cmd, worker.args, worker.daemon, worker.socket_path)
+    spawn_worker(worker.task, worker.daemon, worker.socket_path)
 }
 
-fn spawn_worker(cmd: String, args: Vec<String>, daemon: bool, socket_path: PathBuf) {
+fn spawn_worker(task: Task, daemon: bool, socket_path: PathBuf) {
     // Generate a unique id for each worker
     let mut rng = rand::thread_rng();
     let mut hasher = DefaultHasher::new();
@@ -169,19 +205,23 @@ fn spawn_worker(cmd: String, args: Vec<String>, daemon: bool, socket_path: PathB
     let id = format!("{:x}", hasher.finish());
 
     thread::spawn(move || {
-        let mut child = Command::new(cmd.clone())
-            .args(args.clone())
+        let mut child = Command::new(task.cmd.clone())
+            .args(task.args.clone())
+            .envs(task.envs.clone())
             .stdin(Stdio::piped())
             .spawn()?;
 
         let child_stdin = child.stdin.as_mut().unwrap();
+
+        /*
         let info = WorkerInfo {
             path: socket_path.clone(),
             id: id.clone(),
         }
-        ;
+        */
+
         child_stdin.write_all(
-            format!("{}\n", serde_json::to_string(&info).unwrap()).as_bytes(),
+            format!("{}\n{}\n", id.clone(), socket_path.to_string_lossy()).as_bytes(),
         )?;
 
         drop(child_stdin);
@@ -189,8 +229,7 @@ fn spawn_worker(cmd: String, args: Vec<String>, daemon: bool, socket_path: PathB
         let pid = child.id();
         {
             let worker = WorkerState {
-                cmd,
-                args,
+                task,
                 id,
                 daemon,
                 socket_path,
