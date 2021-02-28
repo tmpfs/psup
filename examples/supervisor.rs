@@ -1,5 +1,5 @@
 use futures::stream::StreamExt;
-use psup::{Error, Result, SupervisorBuilder, Task};
+use psup_impl::{Error, Result, SupervisorBuilder, Task};
 use serde::{Deserialize, Serialize};
 use tokio::io::AsyncWriteExt;
 use tokio_util::codec::{FramedRead, LinesCodec};

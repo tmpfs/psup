@@ -1,7 +1,7 @@
 use std::sync::Mutex;
 
 use futures::stream::StreamExt;
-use psup::{Error, Result, Worker};
+use psup_impl::{Error, Result, Worker};
 use serde::{Deserialize, Serialize};
 use tokio::io::AsyncWriteExt;
 use tokio_util::codec::{FramedRead, LinesCodec};
