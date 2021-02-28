@@ -218,7 +218,7 @@ impl Supervisor {
                     match msg {
                         Message::Shutdown { id } => {
                             let mut state = supervisor_state().lock().await;
-                            let mut worker = state.remove_id(&id);
+                            let mut worker = state.remove(&id);
                             drop(state);
                             if let Some(worker) = worker.take() {
                                 let tx = worker.shutdown.clone();
@@ -282,22 +282,7 @@ struct SupervisorState {
 }
 
 impl SupervisorState {
-    fn remove(&mut self, pid: u32) -> Option<WorkerState> {
-        let res = self.workers.iter().enumerate().find_map(|(i, w)| {
-            if w.pid == pid {
-                Some(i)
-            } else {
-                None
-            }
-        });
-        if let Some(position) = res {
-            Some(self.workers.swap_remove(position))
-        } else {
-            None
-        }
-    }
-
-    fn remove_id(&mut self, id: &str) -> Option<WorkerState> {
+    fn remove(&mut self, id: &str) -> Option<WorkerState> {
         let res = self.workers.iter().enumerate().find_map(|(i, w)| {
             if &w.id == id {
                 Some(i)
@@ -318,7 +303,7 @@ struct WorkerState {
     task: Task,
     id: String,
     socket: PathBuf,
-    pid: u32,
+    pid: Option<u32>,
     /// If we are shutting down this worker explicitly
     /// this flag will be set to prevent the worker from
     /// being re-spawned.
@@ -374,13 +359,16 @@ fn spawn_worker(task: Task, socket: PathBuf, retry: Retry) {
             .envs(envs)
             .spawn()?;
 
-        let pid = child.id().unwrap();
-        info!("Worker pid {}", &pid);
+        let pid = child.id();
+
+        if let Some(ref id) = pid {
+            info!("Worker pid {}", id);
+        }
 
         {
             let worker = WorkerState {
                 task,
-                id,
+                id: id.clone(),
                 socket,
                 pid,
                 reap: false,
@@ -390,15 +378,6 @@ fn spawn_worker(task: Task, socket: PathBuf, retry: Retry) {
             state.workers.push(worker);
         }
 
-        /*
-        let status = child.wait().await?;
-        if let Some(code) = status.code() {
-            warn!("Worker process died: {} (code: {})", pid, code);
-        } else {
-            warn!("Worker process died: {} ({})", pid, status);
-        }
-        */
-
         let mut reaping = false;
 
         loop {
@@ -406,6 +385,7 @@ fn spawn_worker(task: Task, socket: PathBuf, retry: Retry) {
                 res = child.wait() => {
                     match res {
                         Ok(status) => {
+                            let pid = pid.unwrap_or(0);
                             if !reaping {
                                 if let Some(code) = status.code() {
                                     warn!("Worker process died: {} (code: {})", pid, code);
@@ -413,9 +393,8 @@ fn spawn_worker(task: Task, socket: PathBuf, retry: Retry) {
                                     warn!("Worker process died: {} ({})", pid, status);
                                 }
                             }
-                        
                             let mut state = supervisor_state().lock().await;
-                            let worker = state.remove(pid);
+                            let worker = state.remove(&id);
                             drop(state);
                             if let Some(worker) = worker {
                                 info!("Removed child worker (id: {}, pid {})", worker.id, pid);
@@ -427,7 +406,6 @@ fn spawn_worker(task: Task, socket: PathBuf, retry: Retry) {
                                     error!("Failed to remove stale worker for pid {}", pid);
                                 }
                             }
-
                             break;
                         }
                         Err(e) => return Err(e),
@@ -439,24 +417,11 @@ fn spawn_worker(task: Task, socket: PathBuf, retry: Retry) {
                         info!("Shutdown worker {}", worker.id);
                         worker.reap = true;
                         child.kill().await?;
-                        //std::process::exit(1);
                     }
                 }
             )
         }
        
-        /*
-        let mut result: Option<ExitStatus> = None;
-        loop {
-            match child.try_wait() {
-                Ok(res) => {
-                
-                }
-                Err(e) => return Err(e),
-            }
-        }
-        */
-
         Ok::<(), io::Error>(())
     });
 }

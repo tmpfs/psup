@@ -10,7 +10,7 @@
 //! they die without being shutdown by the supervisor.
 //!
 //! ```no_run
-//! use psup_impl::{Error, Result, Error, Task, SupervisorBuilder};
+//! use psup_impl::{Error, Result, Task, SupervisorBuilder};
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<()> {
