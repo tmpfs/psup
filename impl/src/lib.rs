@@ -20,7 +20,7 @@
 //!             let (reader, mut writer) = stream.into_split();
 //!             tokio::task::spawn(async move {
 //!                 // Handle worker connection here
-//!                 // Use the `tx` supervisor control channel 
+//!                 // Use the `tx` supervisor control channel
 //!                 // to spawn and shutdown workers
 //!                 Ok::<(), Error>(())
 //!             });
@@ -44,7 +44,7 @@
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<()> {
-//!     // Read supervisor information from the environment 
+//!     // Read supervisor information from the environment
 //!     // and set up the IPC channel with the supervisor
 //!     let worker = Worker::new()
 //!         .client(|stream, id| async {
@@ -98,5 +98,5 @@ pub(crate) const SOCKET: &str = "PSUP_SOCKET";
 mod supervisor;
 mod worker;
 
-pub use supervisor::{Supervisor, SupervisorBuilder, Task, Message};
+pub use supervisor::{Message, Supervisor, SupervisorBuilder, Task};
 pub use worker::Worker;

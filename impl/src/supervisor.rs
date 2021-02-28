@@ -1,19 +1,17 @@
 //! Supervisor manages a collection of worker processes.
 use std::{
-    io,
+    collections::{hash_map::DefaultHasher, HashMap},
     hash::Hasher,
+    io,
     path::{Path, PathBuf},
     sync::Arc,
-    //sync::Mutex,
-    collections::{hash_map::DefaultHasher, HashMap},
 };
 
 use tokio::{
-    sync::mpsc,
-    sync::Mutex,
-    sync::oneshot::{self, Sender},
     net::{UnixListener, UnixStream},
     process::Command,
+    sync::oneshot::{self, Sender},
+    sync::{mpsc, Mutex},
 };
 
 use log::{error, info, warn};
@@ -30,21 +28,21 @@ fn supervisor_state() -> &'static Mutex<SupervisorState> {
     INSTANCE.get_or_init(|| Mutex::new(SupervisorState { workers: vec![] }))
 }
 
-/// Control messages sent by the server handler to the 
+/// Control messages sent by the server handler to the
 /// supervisor.
 pub enum Message {
     /// Shutdown a worker process using it's opaque identifier.
     ///
-    /// If the worker is a daemon it will *not be restarted*. 
+    /// If the worker is a daemon it will *not be restarted*.
     Shutdown {
         /// Opaque identifier for the worker.
-        id: String
+        id: String,
     },
 
     /// Spawn a new worker process.
-    Spawn{
+    Spawn {
         /// Task definition for the new process.
-        task: Task
+        task: Task,
     },
 }
 
@@ -74,10 +72,12 @@ impl Task {
 
     /// Set command arguments.
     pub fn args<I, S>(mut self, args: I) -> Self
-        where
-            I: IntoIterator<Item = S>,
-            S: AsRef<str> {
-        let args = args.into_iter()
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        let args = args
+            .into_iter()
             .map(|s| s.as_ref().to_string())
             .collect::<Vec<_>>();
         self.args = args;
@@ -101,7 +101,7 @@ impl Task {
 
     /// Set the daemon flag for the worker command.
     ///
-    /// Daemon processes are restarted if they die without being explicitly 
+    /// Daemon processes are restarted if they die without being explicitly
     /// shutdown by the supervisor.
     pub fn daemon(mut self, flag: bool) -> Self {
         self.daemon = flag;
@@ -118,9 +118,9 @@ impl Task {
 
     /// Set the retry limit when restarting dead workers.
     ///
-    /// Only applies to tasks that have the `daemon` flag set; 
-    /// non-daemon tasks are not restarted. If this value is 
-    /// set to zero then it overrides the `daemon` flag and no 
+    /// Only applies to tasks that have the `daemon` flag set;
+    /// non-daemon tasks are not restarted. If this value is
+    /// set to zero then it overrides the `daemon` flag and no
     /// attempts to restart the process are made.
     ///
     /// The default value is `5`.
@@ -131,13 +131,16 @@ impl Task {
 
     /// Get a retry state for this task.
     fn retry(&self) -> Retry {
-        Retry { limit: self.limit, attempts: 0 }
+        Retry {
+            limit: self.limit,
+            attempts: 0,
+        }
     }
 }
 
 #[derive(Clone, Copy)]
 struct Retry {
-    /// The limit on the number of times to attempt 
+    /// The limit on the number of times to attempt
     /// to restart a process.
     limit: usize,
     /// The current number of attempts.
@@ -164,7 +167,9 @@ impl SupervisorBuilder {
 
     /// Set the IPC server handler.
     pub fn server<F: 'static>(mut self, handler: F) -> Self
-        where F: Fn(UnixStream, mpsc::Sender<Message>) + Send + Sync {
+    where
+        F: Fn(UnixStream, mpsc::Sender<Message>) + Send + Sync,
+    {
         self.ipc_handler = Some(Box::new(handler));
         self
     }
@@ -203,7 +208,6 @@ impl Supervisor {
     ///
     /// Listens on the socket path and starts any initial workers.
     pub async fn run(&self) -> Result<()> {
-
         // Set up the server listener and control channel.
         if let Some(ref ipc_handler) = self.ipc_handler {
             let socket = self.socket.clone();
@@ -226,11 +230,11 @@ impl Supervisor {
                             } else {
                                 warn!("Could not find worker to shutdown with id: {}", id);
                             }
-                        } 
+                        }
                         Message::Spawn { task } => {
                             let retry = task.retry();
                             spawn_worker(task, control_socket.clone(), retry);
-                        } 
+                        }
                     }
                 }
             });
@@ -262,7 +266,7 @@ impl Supervisor {
     /*
     /// Get the workers mapped from opaque identifier to process PID.
     pub fn workers() -> HashMap<String, u32> {
-        let state = supervisor_state().lock().unwrap(); 
+        let state = supervisor_state().lock().unwrap();
         state.workers.iter()
             .map(|w| (w.id.clone(), w.pid))
             .collect::<HashMap<_, _>>()
@@ -271,7 +275,7 @@ impl Supervisor {
 
     /*
     pub fn shutdown(&self) {
-    
+
     }
     */
 }
@@ -322,10 +326,13 @@ impl Eq for WorkerState {}
 /// Attempt to restart a worker that died.
 fn restart(worker: WorkerState, mut retry: Retry) {
     info!("Restarting worker {}", worker.id);
-    retry.attempts = retry.attempts + 1; 
+    retry.attempts = retry.attempts + 1;
 
     if retry.attempts >= retry.limit {
-        error!("Failed to restart worker {}, exceeded retry limit {}", worker.id, retry.limit);
+        error!(
+            "Failed to restart worker {}, exceeded retry limit {}",
+            worker.id, retry.limit
+        );
     } else {
         // TODO: retry on fail with backoff and retry limit
         spawn_worker(worker.task, worker.socket, retry)
@@ -410,7 +417,7 @@ fn spawn_worker(task: Task, socket: PathBuf, retry: Retry) {
                         }
                         Err(e) => return Err(e),
                     }
-                } 
+                }
                 mut worker = shutdown_rx.recv() => {
                     if let Some(mut worker) = worker.take() {
                         reaping = true;
@@ -421,7 +428,7 @@ fn spawn_worker(task: Task, socket: PathBuf, retry: Retry) {
                 }
             )
         }
-       
+
         Ok::<(), io::Error>(())
     });
 }

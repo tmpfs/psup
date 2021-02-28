@@ -1,8 +1,7 @@
 //! Worker is a process performing a long-running task.
+use super::{Error, Result, SOCKET, WORKER_ID};
 use futures::Future;
 use tokio::net::UnixStream;
-
-use super::{Error, Result, SOCKET, WORKER_ID};
 
 /// Worker process handler.
 pub struct Worker<H, F>
@@ -25,8 +24,8 @@ where
 
     /// Set a client connection handler.
     ///
-    /// The handler function receives the socket stream and opaque 
-    /// worker identifier and can communicate with the supervisor using 
+    /// The handler function receives the socket stream and opaque
+    /// worker identifier and can communicate with the supervisor using
     /// the socket stream.
     pub fn client(mut self, handler: H) -> Self {
         self.handler = Some(handler);

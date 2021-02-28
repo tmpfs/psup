@@ -1,33 +1,20 @@
 use std::sync::Mutex;
 
-use futures::stream::StreamExt;
 use psup_impl::{Error, Result, Worker};
 use serde::{Deserialize, Serialize};
 use tokio::io::AsyncWriteExt;
-use tokio_util::codec::{FramedRead, LinesCodec};
 
 use json_rpc2::{
     futures::{Server, Service},
     Request, Response,
 };
 
+use psup_json_rpc::{self, Message};
+
 use once_cell::sync::OnceCell;
 
 use async_trait::async_trait;
-use log::{debug, error, info};
-
-/// Encodes whether an IPC message is a request or
-/// a response so that we can do bi-directional
-/// communication over the same socket.
-#[derive(Debug, Serialize, Deserialize)]
-pub enum Message {
-    /// RPC request message.
-    #[serde(rename = "request")]
-    Request(Request),
-    /// RPC response message.
-    #[serde(rename = "response")]
-    Response(Response),
-}
+use log::{info};
 
 fn worker_state() -> &'static Mutex<WorkerState> {
     static INSTANCE: OnceCell<Mutex<WorkerState>> = OnceCell::new();
@@ -81,60 +68,32 @@ async fn main() -> Result<()> {
     pretty_env_logger::init();
 
     let worker = Worker::new().client(|stream, id| async {
-        let (reader, mut writer) = stream.into_split();
-
+        let (reader, mut writer) = tokio::io::split(stream);
         // Send a notification to the supervisor so that it knows
         // this worker is ready
-        let params = serde_json::to_value(Connected { id })
-            .map_err(Error::boxed)?;
+        let params =
+            serde_json::to_value(Connected { id }).map_err(Error::boxed)?;
         let req = Message::Request(Request::new_notification(
             "connected",
             Some(params),
         ));
         //let req =
-        //Message::Request(Request::new_reply(CONNECTED, Some(params)));
+            //Message::Request(Request::new_reply("connected", Some(params)));
         let msg =
             format!("{}\n", serde_json::to_string(&req).map_err(Error::boxed)?);
         writer.write_all(msg.as_bytes()).await?;
 
-        let mut lines = FramedRead::new(reader, LinesCodec::new());
+        //let mut lines = FramedRead::new(reader, LinesCodec::new());
         let service: Box<dyn Service<Data = Mutex<WorkerState>>> =
             Box::new(WorkerService {});
         let server = Server::new(vec![&service]);
-        while let Some(line) = lines.next().await {
-            let line = line.map_err(Error::boxed)?;
-            println!("Line {:?}", line);
-            match serde_json::from_str::<Message>(&line)
-                .map_err(Error::boxed)?
-            {
-                Message::Request(mut req) => {
-                    info!("{:?}", req);
-                    let res = server.serve(&mut req, worker_state()).await;
-                    debug!("{:?}", res);
-                    if let Some(response) = res {
-                        let msg = Message::Response(response);
-                        writer
-                            .write_all(
-                                format!(
-                                    "{}\n",
-                                    serde_json::to_string(&msg)
-                                        .map_err(Error::boxed)?
-                                )
-                                .as_bytes(),
-                            )
-                            .await?;
-                    }
-                }
-                Message::Response(reply) => {
-                    // Currently not handling RPC replies so just log them
-                    if let Some(err) = reply.error() {
-                        error!("{:?}", err);
-                    } else {
-                        info!("Reply {:?}", reply);
-                    }
-                }
-            }
-        }
+        psup_json_rpc::serve::<_, _, Mutex<WorkerState>>(
+            reader,
+            writer,
+            server,
+            worker_state(),
+        )
+        .await?;
         Ok::<(), Error>(())
     });
     worker.run().await?;

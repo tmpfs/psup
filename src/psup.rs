@@ -1,15 +1,12 @@
 #![deny(missing_docs)]
 //! Binary for the psup(1) process supervisor; for the library use the
 //! [psup-impl](https://docs.rs/psup-impl) crate.
-use std::{
-    collections::HashMap,
-    path::PathBuf
-};
-use clap::{Arg, App};
 use anyhow::{anyhow, Result};
-use serde::{Serialize, Deserialize};
-use psup_impl::{SupervisorBuilder, Task};
+use clap::{App, Arg};
 use log::info;
+use psup_impl::{SupervisorBuilder, Task};
+use serde::{Deserialize, Serialize};
+use std::{collections::HashMap, path::PathBuf};
 
 /// Settings deserialized from the configuration file.
 #[derive(Debug, Serialize, Deserialize)]
@@ -65,17 +62,22 @@ async fn main() -> Result<()> {
            //.index(0))
         .get_matches();
 
-    let config = matches.value_of("config")
+    let config = matches
+        .value_of("config")
         .ok_or_else(|| anyhow!("Configuration file is required!"))?;
-    let config = std::fs::read_to_string(config)
-        .map_err(|e| anyhow!("Failed to read configuration {} ({})", config, e.to_string()))?;
+    let config = std::fs::read_to_string(config).map_err(|e| {
+        anyhow!(
+            "Failed to read configuration {} ({})",
+            config,
+            e.to_string()
+        )
+    })?;
     let settings: Settings = toml::from_str(&config)?;
 
     info!("Run {} worker(s)", settings.task.len());
 
     // Use an empty callback as there is no IPC
-    let mut builder = SupervisorBuilder::new()
-        .path(settings.socket);
+    let mut builder = SupervisorBuilder::new().path(settings.socket);
     for runner in settings.task.into_iter() {
         let task: Task = runner.into();
         builder = builder.add_worker(task);
