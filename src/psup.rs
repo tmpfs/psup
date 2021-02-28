@@ -1,4 +1,6 @@
-//! Binary for the psup process supervisor; for the library use the [psup-impl]() crate.
+#![deny(missing_docs)]
+//! Binary for the psup(1) process supervisor; for the library use the
+//! [psup-impl](https://docs.rs/psup-impl) crate.
 use std::{
     collections::HashMap,
     path::PathBuf
@@ -9,19 +11,27 @@ use serde::{Serialize, Deserialize};
 use psup_impl::{SupervisorBuilder, Task};
 use log::info;
 
+/// Settings deserialized from the configuration file.
 #[derive(Debug, Serialize, Deserialize)]
 struct Settings {
+    /// Path for the local socket.
     socket: PathBuf,
+    /// List of worker tasks.
     task: Vec<RunTask>,
 }
 
+/// Worker task information.
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct RunTask {
+    /// Command for the process.
     command: String,
+    /// Arguments for the process.
     args: Option<Vec<String>>,
+    /// Environment variables for the process.
     envs: Option<HashMap<String, String>>,
+    /// Daemonize the process, will be restarted on exit.
     daemon: Option<bool>,
-    detached: Option<bool>,
+    //detached: Option<bool>,
 }
 
 impl Into<Task> for RunTask {
@@ -34,6 +44,8 @@ impl Into<Task> for RunTask {
     }
 }
 
+/// Executable entry point.
+#[doc(hidden)]
 #[tokio::main]
 async fn main() -> Result<()> {
     if std::env::var("RUST_LOG").ok().is_none() {
