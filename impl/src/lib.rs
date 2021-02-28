@@ -50,8 +50,6 @@
 //! }
 //! ```
 
-use std::path::PathBuf;
-
 /// Enumeration of errors.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -103,12 +101,3 @@ mod worker;
 
 pub use supervisor::{Supervisor, SupervisorBuilder, Task};
 pub use worker::Worker;
-
-/// Message sent to worker handlers.
-#[derive(Debug)]
-pub struct WorkerInfo {
-    /// Socket path.
-    pub path: PathBuf,
-    /// Worker identifier.
-    pub id: String,
-}

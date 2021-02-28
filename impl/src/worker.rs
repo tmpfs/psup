@@ -3,12 +3,12 @@ use futures::Future;
 use std::path::PathBuf;
 use tokio::net::UnixStream;
 
-use super::{Error, Result, WorkerInfo, SOCKET, WORKER_ID, DETACHED};
+use super::{Error, Result, SOCKET, WORKER_ID, DETACHED};
 
 /// Worker process handler.
 pub struct Worker<H, F>
 where
-    H: Fn(UnixStream, WorkerInfo) -> F,
+    H: Fn(UnixStream, String) -> F,
     F: Future<Output = Result<()>>,
 {
     handler: H,
@@ -16,7 +16,7 @@ where
 
 impl<H, F> Worker<H, F>
 where
-    H: Fn(UnixStream, WorkerInfo) -> F,
+    H: Fn(UnixStream, String) -> F,
     F: Future<Output = Result<()>>,
 {
     /// Create a new worker.
@@ -30,6 +30,7 @@ where
         let id = std::env::var(WORKER_ID)
             .or_else(|_| Err(Error::WorkerNoId))?
             .to_string();
+
         let path = PathBuf::from(
             std::env::var(SOCKET).or_else(|_| Err(Error::WorkerNoSocket))?,
         );
@@ -37,10 +38,9 @@ where
         let detached = std::env::var(DETACHED).map(|s| s == "true")
             .or_else(|_| Err(Error::WorkerNoDetached))?;
         if !detached {
-            let info = WorkerInfo {id, path};
             // Connect to the supervisor socket
-            let stream = UnixStream::connect(&info.path).await?;
-            (self.handler)(stream, info).await?;
+            let stream = UnixStream::connect(&path).await?;
+            (self.handler)(stream, id).await?;
         }
         Ok(())
     }
