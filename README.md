@@ -6,4 +6,6 @@ A non-blocking process supervisor that uses Unix domain sockets for inter-proces
 cargo run --example=supervisor
 ```
 
+Dual-licensed under MIT and Apacke-2, take your pick.
+
 [tokio]: https://docs.rs/tokio/

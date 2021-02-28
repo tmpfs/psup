@@ -5,7 +5,7 @@ authors = ["muji <muji@tmpfs.org>"]
 edition = "2018"
 description = "Process supervisor with inter-process communication over tokio Unix sockets"
 keywords = ["Process", "Supervisor", "JSON-RPC"]
-repository = "https://github.com/tmpfs/tmpfs.org"
+repository = "https://github.com/tmpfs/psup"
 license = "MIT OR Apache-2.0"
 readme = "README.md"
 
