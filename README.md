@@ -4,8 +4,16 @@ A non-blocking process supervisor that uses Unix domain sockets for inter-proces
 
 It's purpose is primarily to be used as a libary [psup-impl][] but the [psup][] executable can be used for testing or constrained environments where a lightweight executable could be useful. The statically linked release executable is ~2MB with symbols stripped on Linux and could be trimmed down further with a little effort.
 
+Example communicating using JSON RPC:
+
 ```
 cargo run --example=supervisor
+```
+
+An example that uses the supervisor control channel to explicitly shutdown a daemon worker process:
+
+```
+cargo run --example=shutdown
 ```
 
 To test the daemon and respawn logic:
