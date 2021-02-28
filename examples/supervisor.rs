@@ -1,13 +1,12 @@
-use psup_impl::{Error, Result, SupervisorBuilder, Task};
-
 use log::info;
-
 use async_trait::async_trait;
+
 use json_rpc2::{
     futures::{Server, Service},
     Request, Response,
 };
 
+use psup_impl::{Error, Result, SupervisorBuilder, Task};
 use psup_json_rpc::{serve, Connected};
 
 struct SupervisorService;
@@ -23,7 +22,7 @@ impl Service for SupervisorService {
         let mut response = None;
         if req.matches("connected") {
             let info: Connected = req.deserialize()?;
-            info!("Worker connected {:?}", info);
+            info!("{:?}", info);
             // Send ACK to the client in case it asked for a reply
             response = Some(req.into());
         }
@@ -49,9 +48,9 @@ async fn main() -> Result<()> {
                 let server = Server::new(vec![&service]);
                 serve::<(), _, _, _, _, _>(
                     server,
+                    &(),
                     reader,
                     writer,
-                    &(),
                     |req| info!("{:?}", req),
                     |res| info!("{:?}", res),
                     |reply| info!("{:?}", reply),

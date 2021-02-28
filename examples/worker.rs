@@ -1,20 +1,17 @@
 use std::sync::Mutex;
-
-use psup_impl::{Error, Result, Worker};
 use serde::{Deserialize, Serialize};
-use tokio::io::AsyncWriteExt;
+
+use once_cell::sync::OnceCell;
+use async_trait::async_trait;
+use log::info;
 
 use json_rpc2::{
     futures::{Server, Service},
     Request, Response,
 };
 
-use psup_json_rpc::{serve, Message};
-
-use once_cell::sync::OnceCell;
-
-use async_trait::async_trait;
-use log::info;
+use psup_impl::{Error, Result, Worker};
+use psup_json_rpc::{serve, notify, write};
 
 fn worker_state() -> &'static Mutex<WorkerState> {
     static INSTANCE: OnceCell<Mutex<WorkerState>> = OnceCell::new();
@@ -69,19 +66,14 @@ async fn main() -> Result<()> {
 
     let worker = Worker::new().client(|stream, id| async {
         let (reader, mut writer) = tokio::io::split(stream);
+
         // Send a notification to the supervisor so that it knows
-        // this worker is ready
+        // this worker is ready, if we wanted a reply we can build 
+        // the message using `psup_json_rpc::call()`.
         let params =
             serde_json::to_value(Connected { id }).map_err(Error::boxed)?;
-        //let req = Message::Request(Request::new_notification(
-        //"connected",
-        //Some(params),
-        //));
-        let req =
-            Message::Request(Request::new_reply("connected", Some(params)));
-        let msg =
-            format!("{}\n", serde_json::to_string(&req).map_err(Error::boxed)?);
-        writer.write_all(msg.as_bytes()).await?;
+        let req = notify("connected", Some(params));
+        write(&mut writer, &req).await?;
 
         //let mut lines = FramedRead::new(reader, LinesCodec::new());
         let service: Box<dyn Service<Data = Mutex<WorkerState>>> =
@@ -89,9 +81,9 @@ async fn main() -> Result<()> {
         let server = Server::new(vec![&service]);
         serve::<Mutex<WorkerState>, _, _, _, _, _>(
             server,
+            worker_state(),
             reader,
             writer,
-            worker_state(),
             |req| info!("{:?}", req),
             |res| info!("{:?}", res),
             |reply| info!("{:?}", reply),

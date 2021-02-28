@@ -3,10 +3,17 @@
 use futures::stream::StreamExt;
 use json_rpc2::{futures::Server, Request, Response};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, ReadHalf, WriteHalf};
 use tokio_util::codec::{FramedRead, LinesCodec};
 
-/// Encodes whether an IPC message is a request or
+/// Generic error type.
+type Error = Box<dyn std::error::Error + Send + Sync>;
+
+/// Result type.
+type Result<T> = std::result::Result<T, Error>;
+
+/// Encodes whether a packet is a request or
 /// a response so that we can do bi-directional
 /// communication over the same socket.
 #[derive(Debug, Serialize, Deserialize)]
@@ -27,19 +34,47 @@ pub struct Connected {
     pub id: String,
 }
 
+/// Prepare a JSON RPC method call wrapped as a [Message](crate::Message).
+pub fn call(method: &str, params: Option<Value>) -> Message {
+    Message::Request(Request::new_reply(method, params))
+}
+
+/// Prepare a JSON RPC notification wrapped as a [Message](crate::Message).
+pub fn notify(method: &str, params: Option<Value>) -> Message {
+    Message::Request(Request::new_notification(method, params))
+}
+
+/// Write a message to the writer as a JSON encoded line.
+pub async fn write<W>(
+    writer: &mut W,
+    msg: &Message,
+) -> Result<()> 
+    where W: AsyncWrite + Unpin {
+    writer
+        .write(
+            serde_json::to_vec(msg)
+                .map_err(Box::new)?
+                .as_slice(),
+        )
+        .await?;
+    writer.write(b"\n").await?;
+    writer.flush().await?;
+    Ok(())
+}
+
 /// Read and write line-delimited JSON from a stream executing
 /// via a JSON RPC server.
 ///
 /// Request and response functions can be given for logging.
 pub async fn serve<S, R, W, I, O, A>(
     server: Server<'_, S>,
+    state: &S,
     reader: ReadHalf<R>,
     mut writer: WriteHalf<W>,
-    state: &S,
     request: I,
     response: O,
     answer: A,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
+) -> Result<()>
 where
     R: AsyncRead,
     W: AsyncWrite,
@@ -58,28 +93,11 @@ where
                 if let Some(res) = res {
                     (response)(&res);
                     let msg = Message::Response(res);
-                    writer
-                        .write(
-                            serde_json::to_vec(&msg)
-                                .map_err(Box::new)?
-                                .as_slice(),
-                        )
-                        .await?;
-                    writer.write(b"\n").await?;
-                    writer.flush().await?;
+                    write(&mut writer, &msg).await?;
                 }
             }
             Message::Response(reply) => {
                 (answer)(reply);
-                //reply.foo();
-                // Currently not handling RPC replies so just log them
-                /*
-                if let Some(err) = reply.error() {
-                    error!("{:?}", err);
-                } else {
-                    debug!("{:?}", reply);
-                }
-                */
             }
         }
     }

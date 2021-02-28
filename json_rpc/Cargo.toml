@@ -1,6 +1,6 @@
 [package]
 name = "psup-json-rpc"
-version = "0.5.0"
+version = "0.5.1"
 authors = ["muji <muji@tmpfs.org>"]
 edition = "2018"
 description = "JSON RPC adapter for the psup process supervisor library"
@@ -10,7 +10,7 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 futures = "0.3"
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1", features = ["rt", "io-util"] }
 tokio-util = {version = "0.6", features = ["codec"]}
 json-rpc2 = {version= "0.9", features = ["async"]}
 serde = {version = "1", features = ["derive"]}
