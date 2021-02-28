@@ -30,6 +30,7 @@ pub struct Task {
     cmd: String,
     args: Vec<String>,
     envs: HashMap<String, String>,
+    daemon: bool,
 }
 
 impl Task {
@@ -39,6 +40,7 @@ impl Task {
             cmd: cmd.to_string(),
             args: Vec::new(),
             envs: HashMap::new(),
+            daemon: false,
         }
     }
 
@@ -63,12 +65,21 @@ impl Task {
         self.envs = envs;
         self
     }
+
+    /// Set the daemon flag for the worker command.
+    ///
+    /// Daemon processes are restarted if they die without being explicitly 
+    /// shutdown by the supervisor.
+    pub fn daemon(mut self, flag: bool) -> Self {
+        self.daemon = flag;
+        self
+    }
 }
 
 /// Build a supervisor.
 pub struct SupervisorBuilder {
     socket: PathBuf,
-    commands: Vec<(Task, bool)>,
+    commands: Vec<Task>,
     ipc_handler: Box<dyn Fn(UnixStream) + Send + Sync>,
 }
 
@@ -89,18 +100,9 @@ impl SupervisorBuilder {
         self
     }
 
-    /// Add a worker process marked as a daemon.
-    ///
-    /// Daemon worker processes are restarted if they exit without being
-    /// explicitly shutdown by the supervisor.
-    pub fn add_daemon(mut self, task: Task) -> Self {
-        self.commands.push((task, true));
-        self
-    }
-
     /// Add a worker process.
     pub fn add_worker(mut self, task: Task) -> Self {
-        self.commands.push((task, false));
+        self.commands.push(task);
         self
     }
 
@@ -117,7 +119,7 @@ impl SupervisorBuilder {
 /// Supervisor manages long-running worker processes.
 pub struct Supervisor {
     socket: PathBuf,
-    commands: Vec<(Task, bool)>,
+    commands: Vec<Task>,
     ipc_handler: Arc<Box<dyn Fn(UnixStream) + Send + Sync>>,
 }
 
@@ -140,8 +142,8 @@ impl Supervisor {
         let _ = rx.await?;
         info!("Supervisor is listening {}", self.socket.display());
 
-        for (task, daemon) in self.commands.iter() {
-            spawn_worker(task.clone(), daemon.clone(), self.socket.clone());
+        for task in self.commands.iter() {
+            spawn_worker(task.clone(), self.socket.clone());
         }
 
         Ok(())
@@ -176,7 +178,7 @@ struct WorkerState {
     id: String,
     socket_path: PathBuf,
     pid: u32,
-    daemon: bool,
+    //daemon: bool,
     /// If we are shutting down this worker explicitly
     /// this flag will be set to prevent the worker from
     /// being re-spawned.
@@ -197,10 +199,10 @@ impl Eq for WorkerState {}
 fn restart(worker: WorkerState) {
     info!("Restarting worker {}", worker.id);
     // TODO: retry on fail with backoff and retry limit
-    spawn_worker(worker.task, worker.daemon, worker.socket_path)
+    spawn_worker(worker.task, worker.socket_path)
 }
 
-fn spawn_worker(task: Task, daemon: bool, socket_path: PathBuf) {
+fn spawn_worker(task: Task, socket_path: PathBuf) {
     // Generate a unique id for each worker
     let mut rng = rand::thread_rng();
     let mut hasher = DefaultHasher::new();
@@ -226,7 +228,6 @@ fn spawn_worker(task: Task, daemon: bool, socket_path: PathBuf) {
             let worker = WorkerState {
                 task,
                 id,
-                daemon,
                 socket_path,
                 pid,
                 reap: false,
@@ -245,7 +246,7 @@ fn spawn_worker(task: Task, daemon: bool, socket_path: PathBuf) {
         drop(state);
         if let Some(worker) = worker {
             info!("Removed child worker (id: {}, pid {})", worker.id, pid);
-            if !worker.reap && worker.daemon {
+            if !worker.reap && worker.task.daemon {
                 restart(worker);
             }
         } else {

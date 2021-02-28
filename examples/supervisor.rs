@@ -108,8 +108,8 @@ async fn main() -> Result<()> {
         });
     }))
     .path(std::env::temp_dir().join("supervisor.sock"))
-    .add_daemon(Task::new(worker_cmd).args(args.clone()))
-    .add_daemon(Task::new(worker_cmd).args(args.clone()))
+    .add_worker(Task::new(worker_cmd).args(args.clone()).daemon(true))
+    .add_worker(Task::new(worker_cmd).args(args.clone()).daemon(true))
     .build();
     supervisor.run().await?;
 

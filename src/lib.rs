@@ -20,8 +20,8 @@
 //!            // Handle worker connections here
 //!        }))
 //!        .path(std::env::temp_dir().join("supervisor.sock"))
-//!        .add_daemon(Task::new(worker_cmd))
-//!        .add_daemon(Task::new(worker_cmd))
+//!        .add_worker(Task::new(worker_cmd).daemon(true))
+//!        .add_worker(Task::new(worker_cmd).daemon(true))
 //!        .build();
 //!    supervisor.run().await?;
 //!    // Block the process here and do your work.
