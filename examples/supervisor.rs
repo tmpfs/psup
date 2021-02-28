@@ -1,5 +1,5 @@
 use futures::stream::StreamExt;
-use psup_impl::{Error, Result, SupervisorBuilder, Task/*, Message as ControlMessage */};
+use psup_impl::{Error, Result, SupervisorBuilder, Task};
 use serde::{Deserialize, Serialize};
 use tokio::io::AsyncWriteExt;
 use tokio_util::codec::{FramedRead, LinesCodec};
@@ -78,11 +78,6 @@ async fn main() -> Result<()> {
                 {
                     Message::Request(mut req) => {
                         info!("{:?}", req);
-
-                        //let info: Connected = req.deserialize().unwrap();
-                        //println!("Shutdown worker with id {:?}", info.id);
-                        //tx.send(ControlMessage::Shutdown {id: info.id}).await;
-
                         let res = server.serve(&mut req, &()).await;
                         debug!("{:?}", res);
                         if let Some(response) = res {
