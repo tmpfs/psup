@@ -29,8 +29,10 @@ Build a release:
 cargo build --release && strip target/release/psup
 ```
 
-Dual-licensed under MIT and Apacke-2.
+Dual-licensed under [MIT][] and Apache-2.
 
 [tokio]: https://docs.rs/tokio/
 [psup]: https://docs.rs/psup/
 [psup-impl]: https://docs.rs/psup-impl/
+[MIT]: https://mit-license.org/
+[Apache-2]: https://www.apache.org/licenses/LICENSE-2.0.html
