@@ -1,7 +1,7 @@
+//! Adapter for the process supervisor (psup) to serve JSON-RPC over a split socket.
+#![deny(missing_docs)]
 use futures::stream::StreamExt;
 use json_rpc2::{futures::Server, Request, Response};
-use log::{debug, error, info};
-use psup_impl::{Error, Result};
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, ReadHalf, WriteHalf};
 use tokio_util::codec::{FramedRead, LinesCodec};
@@ -29,46 +29,57 @@ pub struct Connected {
 
 /// Read and write line-delimited JSON from a stream executing
 /// via a JSON RPC server.
-pub async fn serve<R, W, S>(
+///
+/// Request and response functions can be given for logging.
+pub async fn serve<S, R, W, I, O, A>(
+    server: Server<'_, S>,
     reader: ReadHalf<R>,
     mut writer: WriteHalf<W>,
-    server: Server<'_, S>,
     state: &S,
-) -> Result<()>
+    request: I,
+    response: O,
+    answer: A,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
 where
     R: AsyncRead,
     W: AsyncWrite,
     S: Send + Sync,
+    I: Fn(&Request),
+    O: Fn(&Response),
+    A: Fn(Response),
 {
     let mut lines = FramedRead::new(reader, LinesCodec::new());
     while let Some(line) = lines.next().await {
-        let line = line.map_err(Error::boxed)?;
-        match serde_json::from_str::<Message>(&line).map_err(Error::boxed)? {
+        let line = line.map_err(Box::new)?;
+        match serde_json::from_str::<Message>(&line).map_err(Box::new)? {
             Message::Request(mut req) => {
-                info!("{:?}", req);
+                (request)(&req);
                 let res = server.serve(&mut req, state).await;
-                debug!("{:?}", res);
-                if let Some(response) = res {
-                    let msg = Message::Response(response);
+                if let Some(res) = res {
+                    (response)(&res);
+                    let msg = Message::Response(res);
                     writer
-                        .write_all(
-                            format!(
-                                "{}\n",
-                                serde_json::to_string(&msg)
-                                    .map_err(Error::boxed)?
-                            )
-                            .as_bytes(),
+                        .write(
+                            serde_json::to_vec(&msg)
+                                .map_err(Box::new)?
+                                .as_slice(),
                         )
                         .await?;
+                    writer.write(b"\n").await?;
+                    writer.flush().await?;
                 }
             }
             Message::Response(reply) => {
+                (answer)(reply);
+                //reply.foo();
                 // Currently not handling RPC replies so just log them
+                /*
                 if let Some(err) = reply.error() {
                     error!("{:?}", err);
                 } else {
                     debug!("{:?}", reply);
                 }
+                */
             }
         }
     }

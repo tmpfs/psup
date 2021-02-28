@@ -8,7 +8,7 @@ use json_rpc2::{
     Request, Response,
 };
 
-use psup_json_rpc::Connected;
+use psup_json_rpc::{serve, Connected};
 
 struct SupervisorService;
 
@@ -47,8 +47,16 @@ async fn main() -> Result<()> {
                 let service: Box<dyn Service<Data = ()>> =
                     Box::new(SupervisorService {});
                 let server = Server::new(vec![&service]);
-                psup_json_rpc::serve::<_, _, ()>(reader, writer, server, &())
-                    .await?;
+                serve::<(), _, _, _, _, _>(
+                    server,
+                    reader,
+                    writer,
+                    &(),
+                    |req| info!("{:?}", req),
+                    |res| info!("{:?}", res),
+                    |reply| info!("{:?}", reply),
+                )
+                .await?;
                 Ok::<(), Error>(())
             });
         })

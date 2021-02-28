@@ -9,12 +9,12 @@ use json_rpc2::{
     Request, Response,
 };
 
-use psup_json_rpc::{self, Message};
+use psup_json_rpc::{serve, Message};
 
 use once_cell::sync::OnceCell;
 
 use async_trait::async_trait;
-use log::{info};
+use log::info;
 
 fn worker_state() -> &'static Mutex<WorkerState> {
     static INSTANCE: OnceCell<Mutex<WorkerState>> = OnceCell::new();
@@ -73,12 +73,12 @@ async fn main() -> Result<()> {
         // this worker is ready
         let params =
             serde_json::to_value(Connected { id }).map_err(Error::boxed)?;
-        let req = Message::Request(Request::new_notification(
-            "connected",
-            Some(params),
-        ));
-        //let req =
-            //Message::Request(Request::new_reply("connected", Some(params)));
+        //let req = Message::Request(Request::new_notification(
+        //"connected",
+        //Some(params),
+        //));
+        let req =
+            Message::Request(Request::new_reply("connected", Some(params)));
         let msg =
             format!("{}\n", serde_json::to_string(&req).map_err(Error::boxed)?);
         writer.write_all(msg.as_bytes()).await?;
@@ -87,11 +87,14 @@ async fn main() -> Result<()> {
         let service: Box<dyn Service<Data = Mutex<WorkerState>>> =
             Box::new(WorkerService {});
         let server = Server::new(vec![&service]);
-        psup_json_rpc::serve::<_, _, Mutex<WorkerState>>(
+        serve::<Mutex<WorkerState>, _, _, _, _, _>(
+            server,
             reader,
             writer,
-            server,
             worker_state(),
+            |req| info!("{:?}", req),
+            |res| info!("{:?}", res),
+            |reply| info!("{:?}", reply),
         )
         .await?;
         Ok::<(), Error>(())
