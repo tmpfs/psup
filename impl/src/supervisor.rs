@@ -141,8 +141,9 @@ impl SupervisorBuilder {
     }
 
     /// Set the IPC server handler.
-    pub fn server(mut self, handler: IpcHandler) -> Self {
-        self.ipc_handler = Some(handler);
+    pub fn server<F: 'static>(mut self, handler: F) -> Self
+        where F: Fn(UnixStream) + Send + Sync {
+        self.ipc_handler = Some(Box::new(handler));
         self
     }
 

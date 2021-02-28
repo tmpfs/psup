@@ -63,7 +63,7 @@ async fn main() -> Result<()> {
 
     let worker_cmd = "cargo";
     let args = vec!["run", "--example", "worker"];
-    let supervisor = SupervisorBuilder::new().server(Box::new(|stream| {
+    let supervisor = SupervisorBuilder::new().server(|stream| {
         let (reader, mut writer) = stream.into_split();
         tokio::task::spawn(async move {
             let service: Box<dyn Service<Data = ()>> =
@@ -106,7 +106,7 @@ async fn main() -> Result<()> {
             }
             Ok::<(), Error>(())
         });
-    }))
+    })
     .path(std::env::temp_dir().join("supervisor.sock"))
     .add_worker(Task::new(worker_cmd).args(args.clone()).daemon(true))
     .add_worker(Task::new(worker_cmd).args(args.clone()).daemon(true))

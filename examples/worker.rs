@@ -80,7 +80,7 @@ async fn main() -> Result<()> {
     }
     pretty_env_logger::init();
 
-    let worker = Worker::new(|stream, id| async {
+    let worker = Worker::new().client(|stream, id| async {
         let (reader, mut writer) = stream.into_split();
 
         // Send a notification to the supervisor so that it knows

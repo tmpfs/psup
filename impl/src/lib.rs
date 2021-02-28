@@ -16,10 +16,10 @@
 //! async fn main() -> Result<()> {
 //!    let worker_cmd = "worker-process";
 //!    let supervisor = SupervisorBuilder::new()
-//!        .server(Box::new(|stream| {
+//!        .server(|stream| {
 //!            let (reader, mut writer) = stream.into_split();
 //!            // Handle worker connections here
-//!        }))
+//!        })
 //!        .path(std::env::temp_dir().join("supervisor.sock"))
 //!        .add_worker(Task::new(worker_cmd).daemon(true))
 //!        .add_worker(Task::new(worker_cmd).daemon(true))
@@ -41,10 +41,11 @@
 //! async fn main() -> Result<()> {
 //!     // Read supervisor information from the environment 
 //!     // and set up the IPC channel with the supervisor
-//!     let worker = Worker::new(|stream| {
-//!         let (reader, mut writer) = stream.into_split();
-//!         // Start sending messages to the supervisor
-//!     });
+//!     let worker = Worker::new()
+//!         .client(|stream| {
+//!             let (reader, mut writer) = stream.into_split();
+//!             // Start sending messages to the supervisor
+//!         });
 //!     worker.run().await?;
 //!     // Block the process here and do your work.
 //!     Ok(())

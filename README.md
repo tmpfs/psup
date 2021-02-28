@@ -8,6 +8,13 @@ It's purpose is primarily to be used as a libary [psup-impl][] but the [psup][] 
 cargo run --example=supervisor
 ```
 
+To see the daemon and respawn logic:
+
+```
+cargo run -- sample.toml
+kill <PID>
+```
+
 Dual-licensed under MIT and Apacke-2.
 
 [tokio]: https://docs.rs/tokio/
