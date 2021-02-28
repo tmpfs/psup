@@ -113,6 +113,9 @@ async fn main() -> Result<()> {
     .build();
     supervisor.run().await?;
 
+    // Implicit worker creation after starting the IPC server.
+    //supervisor.spawn(Task::new("cat").daemon(true));
+
     loop {
         std::thread::sleep(std::time::Duration::from_secs(60))
     }

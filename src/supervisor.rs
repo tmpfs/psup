@@ -128,13 +128,13 @@ impl Supervisor {
     ///
     /// Listens on the socket path and starts any initial workers.
     pub async fn run(&self) -> Result<()> {
-        let socket_path = self.socket.clone();
+        let socket = self.socket.clone();
         let (tx, rx) = oneshot::channel::<()>();
 
         let ipc = Arc::clone(&self.ipc_handler);
 
         tokio::spawn(async move {
-            listen(&socket_path, tx, ipc)
+            listen(&socket, tx, ipc)
                 .await
                 .expect("Supervisor failed to bind to socket");
         });
@@ -147,6 +147,11 @@ impl Supervisor {
         }
 
         Ok(())
+    }
+
+    /// Spawn a worker task.
+    pub fn spawn(&self, task: Task) {
+        spawn_worker(task, self.socket.clone());
     }
 }
 
@@ -176,15 +181,12 @@ impl SupervisorState {
 struct WorkerState {
     task: Task,
     id: String,
-    socket_path: PathBuf,
+    socket: PathBuf,
     pid: u32,
-    //daemon: bool,
     /// If we are shutting down this worker explicitly
     /// this flag will be set to prevent the worker from
     /// being re-spawned.
     reap: bool,
-    // Flag set when a child sends the connected message
-    connected: bool,
 }
 
 impl PartialEq for WorkerState {
@@ -199,10 +201,10 @@ impl Eq for WorkerState {}
 fn restart(worker: WorkerState) {
     info!("Restarting worker {}", worker.id);
     // TODO: retry on fail with backoff and retry limit
-    spawn_worker(worker.task, worker.socket_path)
+    spawn_worker(worker.task, worker.socket)
 }
 
-fn spawn_worker(task: Task, socket_path: PathBuf) {
+fn spawn_worker(task: Task, socket: PathBuf) {
     // Generate a unique id for each worker
     let mut rng = rand::thread_rng();
     let mut hasher = DefaultHasher::new();
@@ -215,7 +217,7 @@ fn spawn_worker(task: Task, socket_path: PathBuf) {
         envs.insert(WORKER_ID.to_string(), id.clone());
         envs.insert(
             SOCKET.to_string(),
-            socket_path.to_string_lossy().into_owned(),
+            socket.to_string_lossy().into_owned(),
         );
 
         let child = Command::new(task.cmd.clone())
@@ -228,10 +230,9 @@ fn spawn_worker(task: Task, socket_path: PathBuf) {
             let worker = WorkerState {
                 task,
                 id,
-                socket_path,
+                socket,
                 pid,
                 reap: false,
-                connected: false,
             };
             let mut state = supervisor_state().lock().unwrap();
             state.workers.push(worker);

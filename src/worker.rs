@@ -26,26 +26,15 @@ where
 
     /// Start this working running.
     pub async fn run(&self) -> Result<()> {
-        let mut info = self.read()?;
-        if let Some(connect) = info.take() {
-            self.connect(connect).await?;
-        }
-        Ok(())
-    }
-
-    /// Read worker information from the environment.
-    fn read(&self) -> Result<Option<WorkerInfo>> {
+        // Read worker information from the environment.
         let id = std::env::var(WORKER_ID)
             .or_else(|_| Err(Error::WorkerNoId))?
             .to_string();
         let path = PathBuf::from(
             std::env::var(SOCKET).or_else(|_| Err(Error::WorkerNoSocket))?,
         );
-        Ok(Some(WorkerInfo { id, path }))
-    }
-
-    /// Connect to the supervisor socket.
-    async fn connect(&self, info: WorkerInfo) -> Result<()> {
+        let info = WorkerInfo {id, path};
+        // Connect to the supervisor socket
         let stream = UnixStream::connect(&info.path).await?;
         (self.handler)(stream, info).await?;
         Ok(())
