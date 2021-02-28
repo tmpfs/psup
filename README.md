@@ -1,6 +1,6 @@
 # psup
 
-A non-blocking process supervisor that uses Unix domain sockets for inter-process communication built on [tokio][]. Later support will be added for Windows named pipes.
+A non-blocking process supervisor that uses Unix domain sockets for inter-process communication built on [tokio][]. Support will be added later for Windows using named pipes.
 
 It's purpose is primarily to be used as a libary [psup-impl][] but the [psup][] executable can be used for testing or constrained environments where a lightweight executable could be useful. The statically linked release executable is ~2MB with symbols stripped on Linux and could be trimmed down further with a little effort.
 
