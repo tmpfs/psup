@@ -275,7 +275,7 @@ fn spawn_worker(task: Task, socket: PathBuf, retry: Retry) {
             );
         }
 
-        info!("Spawn worker {}", &task.cmd);
+        info!("Spawn worker {} {}", &task.cmd, task.args.join(" "));
 
         let child = Command::new(task.cmd.clone())
             .args(task.args.clone())
@@ -283,6 +283,8 @@ fn spawn_worker(task: Task, socket: PathBuf, retry: Retry) {
             .spawn()?;
 
         let pid = child.id();
+        info!("Worker pid {}", &pid);
+
         {
             let worker = WorkerState {
                 task,
@@ -295,9 +297,12 @@ fn spawn_worker(task: Task, socket: PathBuf, retry: Retry) {
             state.workers.push(worker);
         }
 
-        let _ = child.wait_with_output()?;
-
-        warn!("Worker process died: {}", pid);
+        let result = child.wait_with_output()?;
+        if let Some(code) = result.status.code() {
+            warn!("Worker process died: {} (code: {})", pid, code);
+        } else {
+            warn!("Worker process died: {} ({})", pid, result.status);
+        }
 
         let mut state = supervisor_state().lock().unwrap();
         let worker = state.remove(pid);
