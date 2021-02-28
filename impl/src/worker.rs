@@ -36,7 +36,6 @@ where
 
         let detached = std::env::var(DETACHED).map(|s| s == "true")
             .or_else(|_| Err(Error::WorkerNoDetached))?;
-        println!("Worker is detached {:?}", detached);
         if !detached {
             let info = WorkerInfo {id, path};
             // Connect to the supervisor socket

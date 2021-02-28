@@ -1,0 +1,5 @@
+socket = "/tmp/sample.sock"
+
+[[task]]
+command = "cat"
+daemon = true

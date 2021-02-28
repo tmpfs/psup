@@ -49,8 +49,13 @@ impl Task {
     }
 
     /// Set command arguments.
-    pub fn args(mut self, args: Vec<&str>) -> Self {
-        let args = args.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+    pub fn args<I, S>(mut self, args: I) -> Self
+        where
+            I: IntoIterator<Item = S>,
+            S: AsRef<str> {
+        let args = args.into_iter()
+            .map(|s| s.as_ref().to_string())
+            .collect::<Vec<_>>();
         self.args = args;
         self
     }
@@ -232,6 +237,8 @@ fn spawn_worker(task: Task, socket: PathBuf) {
             socket.to_string_lossy().into_owned(),
         );
         envs.insert(DETACHED.to_string(), task.detached.to_string());
+
+        info!("Spawn worker {}", &task.cmd);
 
         let child = Command::new(task.cmd.clone())
             .args(task.args.clone())

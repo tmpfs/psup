@@ -77,7 +77,7 @@ pub enum Error {
 
     /// Generic variant for errors created in user code.
     #[error(transparent)]
-    Boxed(#[from] Box<dyn std::error::Error + Send>),
+    Boxed(#[from] Box<dyn std::error::Error + Send + Sync>),
 }
 
 impl Error {
@@ -85,8 +85,8 @@ impl Error {
     ///
     /// Ssocket handlers can call `map_err(Error::boxed)?` to propagate
     /// foreign errors.
-    pub fn boxed(e: impl std::error::Error + Send + 'static) -> Self {
-        let err: Box<dyn std::error::Error + Send> = Box::new(e);
+    pub fn boxed(e: impl std::error::Error + Send + Sync + 'static) -> Self {
+        let err: Box<dyn std::error::Error + Send + Sync> = Box::new(e);
         Error::from(err)
     }
 }
