@@ -63,7 +63,7 @@ async fn main() -> Result<()> {
 
     let worker_cmd = "cargo";
     let args = vec!["run", "--example", "worker"];
-    let supervisor = SupervisorBuilder::new(Box::new(|stream| {
+    let supervisor = SupervisorBuilder::new().server(Box::new(|stream| {
         let (reader, mut writer) = stream.into_split();
         tokio::task::spawn(async move {
             let service: Box<dyn Service<Data = ()>> =

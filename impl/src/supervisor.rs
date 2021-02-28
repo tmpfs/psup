@@ -126,18 +126,24 @@ struct Retry {
 pub struct SupervisorBuilder {
     socket: PathBuf,
     commands: Vec<Task>,
-    ipc_handler: IpcHandler,
+    ipc_handler: Option<IpcHandler>,
 }
 
 impl SupervisorBuilder {
     /// Create a new supervisor builder.
-    pub fn new(ipc_handler: IpcHandler) -> Self {
+    pub fn new() -> Self {
         let socket = std::env::temp_dir().join("psup.sock");
         Self {
             socket,
             commands: Vec::new(),
-            ipc_handler,
+            ipc_handler: None,
         }
+    }
+
+    /// Set the IPC server handler.
+    pub fn server(mut self, handler: IpcHandler) -> Self {
+        self.ipc_handler = Some(handler);
+        self
     }
 
     /// Set the socket path.
@@ -157,7 +163,7 @@ impl SupervisorBuilder {
         Supervisor {
             socket: self.socket,
             commands: self.commands,
-            ipc_handler: Arc::new(self.ipc_handler),
+            ipc_handler: self.ipc_handler.map(Arc::new),
         }
     }
 }
@@ -166,7 +172,7 @@ impl SupervisorBuilder {
 pub struct Supervisor {
     socket: PathBuf,
     commands: Vec<Task>,
-    ipc_handler: Arc<IpcHandler>,
+    ipc_handler: Option<Arc<IpcHandler>>,
 }
 
 impl Supervisor {
@@ -175,18 +181,18 @@ impl Supervisor {
     /// Listens on the socket path and starts any initial workers.
     pub async fn run(&self) -> Result<()> {
         let socket = self.socket.clone();
-        let (tx, rx) = oneshot::channel::<()>();
 
-        let ipc = Arc::clone(&self.ipc_handler);
-
-        tokio::spawn(async move {
-            listen(&socket, tx, ipc)
-                .await
-                .expect("Supervisor failed to bind to socket");
-        });
-
-        let _ = rx.await?;
-        info!("Supervisor is listening {}", self.socket.display());
+        if let Some(ref ipc_handler) = self.ipc_handler {
+            let (tx, rx) = oneshot::channel::<()>();
+            let ipc = Arc::clone(ipc_handler);
+            tokio::spawn(async move {
+                listen(&socket, tx, ipc)
+                    .await
+                    .expect("Supervisor failed to bind to socket");
+            });
+            let _ = rx.await?;
+            info!("Supervisor is listening {}", self.socket.display());
+        }
 
         for task in self.commands.iter() {
             self.spawn(task.clone());

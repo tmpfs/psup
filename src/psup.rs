@@ -74,7 +74,7 @@ async fn main() -> Result<()> {
     info!("Run {} worker(s)", settings.task.len());
 
     // Use an empty callback as there is no IPC
-    let mut builder = SupervisorBuilder::new(Box::new(|_| {}))
+    let mut builder = SupervisorBuilder::new()
         .path(settings.socket);
     for runner in settings.task.into_iter() {
         let task: Task = runner.into();

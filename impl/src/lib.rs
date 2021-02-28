@@ -15,7 +15,8 @@
 //! #[tokio::main]
 //! async fn main() -> Result<()> {
 //!    let worker_cmd = "worker-process";
-//!    let supervisor = SupervisorBuilder::new(Box::new(|stream| {
+//!    let supervisor = SupervisorBuilder::new()
+//!        .server(Box::new(|stream| {
 //!            let (reader, mut writer) = stream.into_split();
 //!            // Handle worker connections here
 //!        }))

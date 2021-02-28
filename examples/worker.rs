@@ -80,12 +80,12 @@ async fn main() -> Result<()> {
     }
     pretty_env_logger::init();
 
-    let worker = Worker::new(|stream, info| async {
+    let worker = Worker::new(|stream, id| async {
         let (reader, mut writer) = stream.into_split();
 
         // Send a notification to the supervisor so that it knows
         // this worker is ready
-        let params = serde_json::to_value(Connected { id: info.id })
+        let params = serde_json::to_value(Connected { id })
             .map_err(Error::boxed)?;
         let req = Message::Request(Request::new_notification(
             "connected",
