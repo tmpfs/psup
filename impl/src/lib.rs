@@ -57,14 +57,6 @@ pub enum Error {
     #[error("Worker PSUP_WORKER_ID variable is not set")]
     WorkerNoId,
 
-    /// Worker is missing the socket path environment variable.
-    #[error("Worker PSUP_SOCKET variable is not set")]
-    WorkerNoSocket,
-
-    /// Worker is missing the detached flag environment variable.
-    #[error("Worker PSUP_DETACHED variable is not set")]
-    WorkerNoDetached,
-
     /// Input/output errors.
     #[error(transparent)]
     Io(#[from] std::io::Error),
@@ -94,7 +86,6 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 pub(crate) const WORKER_ID: &str = "PSUP_WORKER_ID";
 pub(crate) const SOCKET: &str = "PSUP_SOCKET";
-pub(crate) const DETACHED: &str = "PSUP_DETACHED";
 
 mod supervisor;
 mod worker;

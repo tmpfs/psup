@@ -1,9 +1,8 @@
 //! Worker is a process performing a long-running task.
 use futures::Future;
-use std::path::PathBuf;
 use tokio::net::UnixStream;
 
-use super::{Error, Result, SOCKET, WORKER_ID, DETACHED};
+use super::{Error, Result, SOCKET, WORKER_ID};
 
 /// Worker process handler.
 pub struct Worker<H, F>
@@ -31,17 +30,13 @@ where
             .or_else(|_| Err(Error::WorkerNoId))?
             .to_string();
 
-        let path = PathBuf::from(
-            std::env::var(SOCKET).or_else(|_| Err(Error::WorkerNoSocket))?,
-        );
-
-        let detached = std::env::var(DETACHED).map(|s| s == "true")
-            .or_else(|_| Err(Error::WorkerNoDetached))?;
-        if !detached {
+        // If we were given a socket path make the connection.
+        if let Some(path) = std::env::var(SOCKET).ok() {
             // Connect to the supervisor socket
             let stream = UnixStream::connect(&path).await?;
             (self.handler)(stream, id).await?;
         }
+
         Ok(())
     }
 }

@@ -16,7 +16,7 @@ use log::{error, info, warn};
 use once_cell::sync::OnceCell;
 use rand::Rng;
 
-use super::{Result, SOCKET, WORKER_ID, DETACHED};
+use super::{Result, SOCKET, WORKER_ID};
 
 type IpcHandler = Box<dyn Fn(UnixStream) + Send + Sync>;
 
@@ -268,11 +268,12 @@ fn spawn_worker(task: Task, socket: PathBuf, retry: Retry) {
         // Setup built in environment variables
         let mut envs = task.envs.clone();
         envs.insert(WORKER_ID.to_string(), id.clone());
-        envs.insert(
-            SOCKET.to_string(),
-            socket.to_string_lossy().into_owned(),
-        );
-        envs.insert(DETACHED.to_string(), task.detached.to_string());
+        if !task.detached {
+            envs.insert(
+                SOCKET.to_string(),
+                socket.to_string_lossy().into_owned(),
+            );
+        }
 
         info!("Spawn worker {}", &task.cmd);
 
