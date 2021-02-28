@@ -22,6 +22,7 @@ struct Settings {
 
 /// Worker task information.
 #[derive(Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 struct RunTask {
     /// Command for the process.
     command: String,
@@ -31,6 +32,8 @@ struct RunTask {
     envs: Option<HashMap<String, String>>,
     /// Daemonize the process, will be restarted on exit.
     daemon: Option<bool>,
+    /// Limit for restarting daemon processes.
+    retry_limit: Option<usize>,
 }
 
 impl Into<Task> for RunTask {
@@ -39,6 +42,7 @@ impl Into<Task> for RunTask {
             .args(self.args.unwrap_or(Vec::new()))
             .envs(self.envs.unwrap_or(HashMap::new()))
             .daemon(self.daemon.unwrap_or(false))
+            .retry_limit(self.retry_limit.unwrap_or(5))
     }
 }
 

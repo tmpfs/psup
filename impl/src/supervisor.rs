@@ -34,6 +34,7 @@ pub struct Task {
     envs: HashMap<String, String>,
     daemon: bool,
     detached: bool,
+    limit: usize,
 }
 
 impl Task {
@@ -45,6 +46,7 @@ impl Task {
             envs: HashMap::new(),
             daemon: false,
             detached: false,
+            limit: 5,
         }
     }
 
@@ -91,6 +93,33 @@ impl Task {
         self.detached = flag;
         self
     }
+
+    /// Set the retry limit when restarting dead workers.
+    ///
+    /// Only applies to tasks that have the `daemon` flag set; 
+    /// non-daemon tasks are not restarted. If this value is 
+    /// set to zero then it overrides the `daemon` flag and no 
+    /// attempts to restart the process are made.
+    ///
+    /// The default value is `5`.
+    pub fn retry_limit(mut self, limit: usize) -> Self {
+        self.limit = limit;
+        self
+    }
+
+    /// Get a retry state for this task.
+    fn retry(&self) -> Retry {
+        Retry { limit: self.limit, attempts: 0 }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct Retry {
+    /// The limit on the number of times to attempt 
+    /// to restart a process.
+    limit: usize,
+    /// The current number of attempts.
+    attempts: usize,
 }
 
 /// Build a supervisor.
@@ -160,7 +189,7 @@ impl Supervisor {
         info!("Supervisor is listening {}", self.socket.display());
 
         for task in self.commands.iter() {
-            spawn_worker(task.clone(), self.socket.clone());
+            self.spawn(task.clone());
         }
 
         Ok(())
@@ -168,7 +197,8 @@ impl Supervisor {
 
     /// Spawn a worker task.
     pub fn spawn(&self, task: Task) {
-        spawn_worker(task, self.socket.clone());
+        let retry = task.retry();
+        spawn_worker(task, self.socket.clone(), retry);
     }
 }
 
@@ -215,13 +245,19 @@ impl PartialEq for WorkerState {
 impl Eq for WorkerState {}
 
 /// Attempt to restart a worker that died.
-fn restart(worker: WorkerState) {
+fn restart(worker: WorkerState, mut retry: Retry) {
     info!("Restarting worker {}", worker.id);
-    // TODO: retry on fail with backoff and retry limit
-    spawn_worker(worker.task, worker.socket)
+    retry.attempts = retry.attempts + 1; 
+
+    if retry.attempts >= retry.limit {
+        error!("Failed to restart worker {}, exceeded retry limit {}", worker.id, retry.limit);
+    } else {
+        // TODO: retry on fail with backoff and retry limit
+        spawn_worker(worker.task, worker.socket, retry)
+    }
 }
 
-fn spawn_worker(task: Task, socket: PathBuf) {
+fn spawn_worker(task: Task, socket: PathBuf, retry: Retry) {
     // Generate a unique id for each worker
     let mut rng = rand::thread_rng();
     let mut hasher = DefaultHasher::new();
@@ -268,7 +304,7 @@ fn spawn_worker(task: Task, socket: PathBuf) {
         if let Some(worker) = worker {
             info!("Removed child worker (id: {}, pid {})", worker.id, pid);
             if !worker.reap && worker.task.daemon {
-                restart(worker);
+                restart(worker, retry);
             }
         } else {
             error!("Failed to remove stale worker for pid {}", pid);

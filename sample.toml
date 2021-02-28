@@ -3,3 +3,7 @@ socket = "/tmp/sample.sock"
 [[task]]
 command = "cat"
 daemon = true
+
+#[[task]]
+#command = "false"
+#daemon = true
