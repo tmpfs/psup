@@ -16,9 +16,10 @@
 //! async fn main() -> Result<()> {
 //!    let worker_cmd = "worker-process";
 //!    let supervisor = SupervisorBuilder::new()
-//!        .server(|stream| {
+//!        .server(|stream, tx| {
 //!            let (reader, mut writer) = stream.into_split();
 //!            // Handle worker connections here
+//!            // Use the `tx` channel to spawn and shutdown workers
 //!        })
 //!        .path(std::env::temp_dir().join("supervisor.sock"))
 //!        .add_worker(Task::new(worker_cmd).daemon(true))
@@ -92,5 +93,5 @@ pub(crate) const SOCKET: &str = "PSUP_SOCKET";
 mod supervisor;
 mod worker;
 
-pub use supervisor::{Supervisor, SupervisorBuilder, Task};
+pub use supervisor::{Supervisor, SupervisorBuilder, Task, Message};
 pub use worker::Worker;

@@ -23,13 +23,17 @@ where
         Self { handler: None }
     }
 
-    /// Set a client IPC handler.
+    /// Set a client connection handler.
+    ///
+    /// The handler function receives the socket stream and opaque 
+    /// worker identifier and can communicate with the supervisor using 
+    /// the socket stream.
     pub fn client(mut self, handler: H) -> Self {
         self.handler = Some(handler);
         self
     }
 
-    /// Start this working running.
+    /// Start this worker running.
     pub async fn run(&self) -> Result<()> {
         if let Some(ref handler) = self.handler {
             // Read worker information from the environment.

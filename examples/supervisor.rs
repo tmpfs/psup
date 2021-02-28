@@ -1,5 +1,5 @@
 use futures::stream::StreamExt;
-use psup_impl::{Error, Result, SupervisorBuilder, Task};
+use psup_impl::{Error, Result, SupervisorBuilder, Task/*, Message as ControlMessage */};
 use serde::{Deserialize, Serialize};
 use tokio::io::AsyncWriteExt;
 use tokio_util::codec::{FramedRead, LinesCodec};
@@ -63,7 +63,7 @@ async fn main() -> Result<()> {
 
     let worker_cmd = "cargo";
     let args = vec!["run", "--example", "worker"];
-    let supervisor = SupervisorBuilder::new().server(|stream| {
+    let supervisor = SupervisorBuilder::new().server(|stream, _tx| {
         let (reader, mut writer) = stream.into_split();
         tokio::task::spawn(async move {
             let service: Box<dyn Service<Data = ()>> =
@@ -77,7 +77,12 @@ async fn main() -> Result<()> {
                     .map_err(Error::boxed)?
                 {
                     Message::Request(mut req) => {
-                        debug!("{:?}", req);
+                        info!("{:?}", req);
+
+                        //let info: Connected = req.deserialize().unwrap();
+                        //println!("Shutdown worker with id {:?}", info.id);
+                        //tx.send(ControlMessage::Shutdown {id: info.id}).await;
+
                         let res = server.serve(&mut req, &()).await;
                         debug!("{:?}", res);
                         if let Some(response) = res {

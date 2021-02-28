@@ -1,16 +1,20 @@
 //! Supervisor manages a collection of worker processes.
 use std::{
-    io, thread,
+    io,
     hash::Hasher,
     path::{Path, PathBuf},
-    process::Command,
     sync::Arc,
-    sync::Mutex,
+    //sync::Mutex,
     collections::{hash_map::DefaultHasher, HashMap},
 };
 
-use tokio::net::{UnixListener, UnixStream};
-use tokio::sync::oneshot::{self, Sender};
+use tokio::{
+    sync::mpsc,
+    sync::Mutex,
+    sync::oneshot::{self, Sender},
+    net::{UnixListener, UnixStream},
+    process::Command,
+};
 
 use log::{error, info, warn};
 use once_cell::sync::OnceCell;
@@ -18,12 +22,30 @@ use rand::Rng;
 
 use super::{Result, SOCKET, WORKER_ID};
 
-type IpcHandler = Box<dyn Fn(UnixStream) + Send + Sync>;
+type IpcHandler = Box<dyn Fn(UnixStream, mpsc::Sender<Message>) + Send + Sync>;
 
 /// Get the supervisor state.
 fn supervisor_state() -> &'static Mutex<SupervisorState> {
     static INSTANCE: OnceCell<Mutex<SupervisorState>> = OnceCell::new();
     INSTANCE.get_or_init(|| Mutex::new(SupervisorState { workers: vec![] }))
+}
+
+/// Control messages sent by the server handler to the 
+/// supervisor.
+pub enum Message {
+    /// Shutdown a worker process using it's opaque identifier.
+    ///
+    /// If the worker is a daemon it will *not be restarted*. 
+    Shutdown {
+        /// Opaque identifier for the worker.
+        id: String
+    },
+
+    /// Spawn a new worker process.
+    Spawn{
+        /// Task definition for the new process.
+        task: Task
+    },
 }
 
 /// Defines a worker process command.
@@ -142,7 +164,7 @@ impl SupervisorBuilder {
 
     /// Set the IPC server handler.
     pub fn server<F: 'static>(mut self, handler: F) -> Self
-        where F: Fn(UnixStream) + Send + Sync {
+        where F: Fn(UnixStream, mpsc::Sender<Message>) + Send + Sync {
         self.ipc_handler = Some(Box::new(handler));
         self
     }
@@ -181,20 +203,49 @@ impl Supervisor {
     ///
     /// Listens on the socket path and starts any initial workers.
     pub async fn run(&self) -> Result<()> {
-        let socket = self.socket.clone();
 
+        // Set up the server listener and control channel.
         if let Some(ref ipc_handler) = self.ipc_handler {
+            let socket = self.socket.clone();
+            let control_socket = self.socket.clone();
+
+            let (control_tx, mut control_rx) = mpsc::channel::<Message>(1024);
             let (tx, rx) = oneshot::channel::<()>();
-            let ipc = Arc::clone(ipc_handler);
+            let handler = Arc::clone(ipc_handler);
+
             tokio::spawn(async move {
-                listen(&socket, tx, ipc)
+                while let Some(msg) = control_rx.recv().await {
+                    match msg {
+                        Message::Shutdown { id } => {
+                            let mut state = supervisor_state().lock().await;
+                            let mut worker = state.remove_id(&id);
+                            drop(state);
+                            if let Some(worker) = worker.take() {
+                                let tx = worker.shutdown.clone();
+                                let _ = tx.send(worker).await;
+                            } else {
+                                warn!("Could not find worker to shutdown with id: {}", id);
+                            }
+                        } 
+                        Message::Spawn { task } => {
+                            let retry = task.retry();
+                            spawn_worker(task, control_socket.clone(), retry);
+                        } 
+                    }
+                }
+            });
+
+            tokio::spawn(async move {
+                listen(&socket, tx, handler, control_tx)
                     .await
                     .expect("Supervisor failed to bind to socket");
             });
+
             let _ = rx.await?;
             info!("Supervisor is listening {}", self.socket.display());
         }
 
+        // Spawn initial worker processes.
         for task in self.commands.iter() {
             self.spawn(task.clone());
         }
@@ -207,6 +258,22 @@ impl Supervisor {
         let retry = task.retry();
         spawn_worker(task, self.socket.clone(), retry);
     }
+
+    /*
+    /// Get the workers mapped from opaque identifier to process PID.
+    pub fn workers() -> HashMap<String, u32> {
+        let state = supervisor_state().lock().unwrap(); 
+        state.workers.iter()
+            .map(|w| (w.id.clone(), w.pid))
+            .collect::<HashMap<_, _>>()
+    }
+    */
+
+    /*
+    pub fn shutdown(&self) {
+    
+    }
+    */
 }
 
 /// State of the supervisor worker processes.
@@ -218,6 +285,21 @@ impl SupervisorState {
     fn remove(&mut self, pid: u32) -> Option<WorkerState> {
         let res = self.workers.iter().enumerate().find_map(|(i, w)| {
             if w.pid == pid {
+                Some(i)
+            } else {
+                None
+            }
+        });
+        if let Some(position) = res {
+            Some(self.workers.swap_remove(position))
+        } else {
+            None
+        }
+    }
+
+    fn remove_id(&mut self, id: &str) -> Option<WorkerState> {
+        let res = self.workers.iter().enumerate().find_map(|(i, w)| {
+            if &w.id == id {
                 Some(i)
             } else {
                 None
@@ -241,6 +323,7 @@ struct WorkerState {
     /// this flag will be set to prevent the worker from
     /// being re-spawned.
     reap: bool,
+    shutdown: mpsc::Sender<WorkerState>,
 }
 
 impl PartialEq for WorkerState {
@@ -271,7 +354,7 @@ fn spawn_worker(task: Task, socket: PathBuf, retry: Retry) {
     hasher.write_usize(rng.gen());
     let id = format!("{:x}", hasher.finish());
 
-    thread::spawn(move || {
+    tokio::task::spawn(async move {
         // Setup built in environment variables
         let mut envs = task.envs.clone();
         envs.insert(WORKER_ID.to_string(), id.clone());
@@ -282,14 +365,16 @@ fn spawn_worker(task: Task, socket: PathBuf, retry: Retry) {
             );
         }
 
+        let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<WorkerState>(1);
+
         info!("Spawn worker {} {}", &task.cmd, task.args.join(" "));
 
-        let child = Command::new(task.cmd.clone())
+        let mut child = Command::new(task.cmd.clone())
             .args(task.args.clone())
             .envs(envs)
             .spawn()?;
 
-        let pid = child.id();
+        let pid = child.id().unwrap();
         info!("Worker pid {}", &pid);
 
         {
@@ -299,29 +384,78 @@ fn spawn_worker(task: Task, socket: PathBuf, retry: Retry) {
                 socket,
                 pid,
                 reap: false,
+                shutdown: shutdown_tx,
             };
-            let mut state = supervisor_state().lock().unwrap();
+            let mut state = supervisor_state().lock().await;
             state.workers.push(worker);
         }
 
-        let result = child.wait_with_output()?;
-        if let Some(code) = result.status.code() {
+        /*
+        let status = child.wait().await?;
+        if let Some(code) = status.code() {
             warn!("Worker process died: {} (code: {})", pid, code);
         } else {
-            warn!("Worker process died: {} ({})", pid, result.status);
+            warn!("Worker process died: {} ({})", pid, status);
         }
+        */
 
-        let mut state = supervisor_state().lock().unwrap();
-        let worker = state.remove(pid);
-        drop(state);
-        if let Some(worker) = worker {
-            info!("Removed child worker (id: {}, pid {})", worker.id, pid);
-            if !worker.reap && worker.task.daemon {
-                restart(worker, retry);
-            }
-        } else {
-            error!("Failed to remove stale worker for pid {}", pid);
+        let mut reaping = false;
+
+        loop {
+            tokio::select!(
+                res = child.wait() => {
+                    match res {
+                        Ok(status) => {
+                            if !reaping {
+                                if let Some(code) = status.code() {
+                                    warn!("Worker process died: {} (code: {})", pid, code);
+                                } else {
+                                    warn!("Worker process died: {} ({})", pid, status);
+                                }
+                            }
+                        
+                            let mut state = supervisor_state().lock().await;
+                            let worker = state.remove(pid);
+                            drop(state);
+                            if let Some(worker) = worker {
+                                info!("Removed child worker (id: {}, pid {})", worker.id, pid);
+                                if !worker.reap && worker.task.daemon {
+                                    restart(worker, retry);
+                                }
+                            } else {
+                                if !reaping {
+                                    error!("Failed to remove stale worker for pid {}", pid);
+                                }
+                            }
+
+                            break;
+                        }
+                        Err(e) => return Err(e),
+                    }
+                } 
+                mut worker = shutdown_rx.recv() => {
+                    if let Some(mut worker) = worker.take() {
+                        reaping = true;
+                        info!("Shutdown worker {}", worker.id);
+                        worker.reap = true;
+                        child.kill().await?;
+                        //std::process::exit(1);
+                    }
+                }
+            )
         }
+       
+        /*
+        let mut result: Option<ExitStatus> = None;
+        loop {
+            match child.try_wait() {
+                Ok(res) => {
+                
+                }
+                Err(e) => return Err(e),
+            }
+        }
+        */
 
         Ok::<(), io::Error>(())
     });
@@ -331,6 +465,7 @@ async fn listen<P: AsRef<Path>>(
     socket: P,
     tx: Sender<()>,
     handler: Arc<IpcHandler>,
+    control_tx: mpsc::Sender<Message>,
 ) -> Result<()> {
     let path = socket.as_ref();
 
@@ -344,7 +479,7 @@ async fn listen<P: AsRef<Path>>(
 
     loop {
         match listener.accept().await {
-            Ok((stream, _addr)) => (handler)(stream),
+            Ok((stream, _addr)) => (handler)(stream, control_tx.clone()),
             Err(e) => {
                 warn!("Supervisor failed to accept worker socket {}", e);
             }
