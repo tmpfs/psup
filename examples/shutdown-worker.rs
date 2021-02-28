@@ -1,5 +1,4 @@
 use std::sync::Mutex;
-use serde::{Deserialize, Serialize};
 
 use once_cell::sync::OnceCell;
 use async_trait::async_trait;
@@ -38,12 +37,6 @@ impl Service for WorkerService {
             let state = ctx.lock().unwrap();
             info!("Child service connected {}", state.id);
             response = Some(req.into());
-
-            /*
-            } else if req.matches(SHUTDOWN) {
-                info!("Child going down now.");
-                response = Some(req.into());
-            */
         }
         Ok(response)
     }
@@ -78,15 +71,15 @@ async fn main() -> Result<()> {
             writer,
             |req| info!("{:?}", req),
             |res| info!("{:?}", res),
-            |reply, writer| {
+            |reply| {
+                info!("{:?}", reply);
+                // Receive the answer to the `connected` message
+                // and send a `shutdown` notification
                 let state = worker_state(None).lock().unwrap();
                 let id = state.id.clone();
-                println!("Got an answer from the service {}", id);
-                //info!("{:?}", reply);
-                //let params = serde_json::to_value(Connected { id }).map_err(Box::new)?;
-                //let req = notify("shutdown", Some(params));
-                //write(writer, &req).await?;
-                //Ok(())
+                let params = serde_json::to_value(Connected { id }).map_err(Box::new)?;
+                let req = notify("shutdown", Some(params));
+                Ok(Some(req))
             },
         )
         .await?;

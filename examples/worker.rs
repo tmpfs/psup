@@ -65,9 +65,9 @@ async fn main() -> Result<()> {
             writer,
             |req| info!("{:?}", req),
             |res| info!("{:?}", res),
-            |reply, _| {
+            |reply| {
                 info!("{:?}", reply);
-                //Ok(())
+                Ok(None)
             },
         )
         .await?;
