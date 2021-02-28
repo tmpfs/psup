@@ -7,7 +7,7 @@ use json_rpc2::{
 };
 
 use psup_impl::{Error, Result, SupervisorBuilder, Task};
-use psup_json_rpc::{serve, Connected};
+use psup_json_rpc::{serve, Identity};
 
 struct SupervisorService;
 
@@ -21,7 +21,7 @@ impl Service for SupervisorService {
     ) -> json_rpc2::Result<Option<Response>> {
         let mut response = None;
         if req.matches("connected") {
-            let info: Connected = req.deserialize()?;
+            let info: Identity = req.deserialize()?;
             info!("{:?}", info);
             // Send ACK to the client in case it asked for a reply
             response = Some(req.into());

@@ -26,10 +26,9 @@ pub enum Message {
     Response(Response),
 }
 
-/// Message sent to the supervisor when a worker
-/// is spawned and has connected to the IPC socket.
+/// Worker identity payload.
 #[derive(Debug, Serialize, Deserialize)]
-pub struct Connected {
+pub struct Identity {
     /// Worker identifier.
     pub id: String,
 }
@@ -65,7 +64,9 @@ pub async fn write<W>(
 /// Read and write line-delimited JSON from a stream executing
 /// via a JSON RPC server.
 ///
-/// Request and response functions can be given for logging.
+/// Request and response functions are useful for logging service 
+/// calls; the answer function can be used to handle replies from 
+/// a remote method call.
 pub async fn serve<S, R, W, I, O, A>(
     server: Server<'_, S>,
     state: &S,
@@ -101,7 +102,6 @@ where
                 if let Some(msg) = msg {
                     write(&mut writer, &msg).await?; 
                 }
-                //(answer)(reply, &mut writer);
             }
         }
     }

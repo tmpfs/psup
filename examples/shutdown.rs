@@ -17,7 +17,7 @@ use json_rpc2::{
 use psup_impl::{
     Error, Result, SupervisorBuilder, Task, Message,
 };
-use psup_json_rpc::{serve, Connected};
+use psup_json_rpc::{serve, Identity};
 
 struct ShutdownService;
 
@@ -31,12 +31,12 @@ impl Service for ShutdownService {
     ) -> json_rpc2::Result<Option<Response>> {
         let mut response = None;
         if req.matches("connected") {
-            let info: Connected = req.deserialize()?;
+            let info: Identity = req.deserialize()?;
             info!("{:?}", info);
             // Send ACK to the client in case it asked for a reply
             response = Some(req.into());
         } else if req.matches("shutdown") {
-            let info: Connected = req.deserialize()?;
+            let info: Identity = req.deserialize()?;
             info!("Terminating worker {:?}", info);
             let _ = ctx
                 .send(Message::Shutdown { id: info.id })

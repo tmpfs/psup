@@ -10,7 +10,7 @@ use json_rpc2::{
 };
 
 use psup_impl::{Error, Result, Worker};
-use psup_json_rpc::{serve, notify, write, Connected};
+use psup_json_rpc::{serve, notify, write, Identity};
 
 fn worker_state() -> &'static Mutex<WorkerState> {
     static INSTANCE: OnceCell<Mutex<WorkerState>> = OnceCell::new();
@@ -50,7 +50,7 @@ async fn main() -> Result<()> {
         // this worker is ready, if we wanted a reply we can build 
         // the message using `psup_json_rpc::call()`.
         let params =
-            serde_json::to_value(Connected { id }).map_err(Error::boxed)?;
+            serde_json::to_value(Identity { id }).map_err(Error::boxed)?;
         let req = notify("connected", Some(params));
         write(&mut writer, &req).await?;
 
