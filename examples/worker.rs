@@ -1,10 +1,10 @@
 use std::sync::Mutex;
 
+use futures::stream::StreamExt;
 use psup::{Error, Result, Worker};
+use serde::{Deserialize, Serialize};
 use tokio::io::AsyncWriteExt;
 use tokio_util::codec::{FramedRead, LinesCodec};
-use futures::stream::StreamExt;
-use serde::{Deserialize, Serialize};
 
 use json_rpc2::{
     futures::{Server, Service},
@@ -16,8 +16,8 @@ use once_cell::sync::OnceCell;
 use async_trait::async_trait;
 use log::{debug, error, info};
 
-/// Encodes whether an IPC message is a request or 
-/// a response so that we can do bi-directional 
+/// Encodes whether an IPC message is a request or
+/// a response so that we can do bi-directional
 /// communication over the same socket.
 #[derive(Debug, Serialize, Deserialize)]
 pub enum Message {
@@ -63,11 +63,11 @@ impl Service for WorkerService {
             info!("Child service connected {}", state.id);
             response = Some(req.into());
 
-        /*
-        } else if req.matches(SHUTDOWN) {
-            info!("Child going down now.");
-            response = Some(req.into());
-        */
+            /*
+            } else if req.matches(SHUTDOWN) {
+                info!("Child going down now.");
+                response = Some(req.into());
+            */
         }
         Ok(response)
     }
@@ -85,12 +85,16 @@ async fn main() -> Result<()> {
 
         // Send a notification to the supervisor so that it knows
         // this worker is ready
-        let params = serde_json::to_value(Connected { id: info.id }).map_err(Error::boxed)?;
-        let req =
-            Message::Request(Request::new_notification("connected", Some(params)));
+        let params = serde_json::to_value(Connected { id: info.id })
+            .map_err(Error::boxed)?;
+        let req = Message::Request(Request::new_notification(
+            "connected",
+            Some(params),
+        ));
         //let req =
-            //Message::Request(Request::new_reply(CONNECTED, Some(params)));
-        let msg = format!("{}\n", serde_json::to_string(&req).map_err(Error::boxed)?);
+        //Message::Request(Request::new_reply(CONNECTED, Some(params)));
+        let msg =
+            format!("{}\n", serde_json::to_string(&req).map_err(Error::boxed)?);
         writer.write_all(msg.as_bytes()).await?;
 
         let mut lines = FramedRead::new(reader, LinesCodec::new());
@@ -100,7 +104,9 @@ async fn main() -> Result<()> {
         while let Some(line) = lines.next().await {
             let line = line.map_err(Error::boxed)?;
             println!("Line {:?}", line);
-            match serde_json::from_str::<Message>(&line).map_err(Error::boxed)? {
+            match serde_json::from_str::<Message>(&line)
+                .map_err(Error::boxed)?
+            {
                 Message::Request(mut req) => {
                     info!("{:?}", req);
                     let res = server.serve(&mut req, worker_state()).await;
@@ -109,8 +115,12 @@ async fn main() -> Result<()> {
                         let msg = Message::Response(response);
                         writer
                             .write_all(
-                                format!("{}\n", serde_json::to_string(&msg).map_err(Error::boxed)?)
-                                    .as_bytes(),
+                                format!(
+                                    "{}\n",
+                                    serde_json::to_string(&msg)
+                                        .map_err(Error::boxed)?
+                                )
+                                .as_bytes(),
                             )
                             .await?;
                     }

@@ -1,12 +1,13 @@
 //! Supervisor manages a collection of worker processes.
-use std::collections::{HashMap, hash_map::DefaultHasher};
-use std::hash::Hasher;
-use std::io::{self, Write};
-use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
-use std::sync::Mutex;
-use std::thread;
-use std::sync::Arc;
+use std::{
+    io, thread,
+    hash::Hasher,
+    path::{Path, PathBuf},
+    process::Command,
+    sync::Arc,
+    sync::Mutex,
+    collections::{hash_map::DefaultHasher, HashMap},
+};
 
 use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::oneshot::{self, Sender};
@@ -15,7 +16,7 @@ use log::{error, info, warn};
 use once_cell::sync::OnceCell;
 use rand::Rng;
 
-use super::Result;
+use super::{Result, SOCKET, WORKER_ID};
 
 /// Get the supervisor state.
 fn supervisor_state() -> &'static Mutex<SupervisorState> {
@@ -38,7 +39,7 @@ impl Task {
             cmd: cmd.to_string(),
             args: Vec::new(),
             envs: HashMap::new(),
-        } 
+        }
     }
 
     /// Set command arguments.
@@ -50,15 +51,17 @@ impl Task {
 
     /// Set command environment variables.
     pub fn envs<I, K, V>(mut self, vars: I) -> Self
-        where
-            I: IntoIterator<Item = (K, V)>,
-            K: AsRef<str>,
-            V: AsRef<str> {
-        let envs = vars.into_iter()
+    where
+        I: IntoIterator<Item = (K, V)>,
+        K: AsRef<str>,
+        V: AsRef<str>,
+    {
+        let envs = vars
+            .into_iter()
             .map(|(k, v)| (k.as_ref().to_string(), v.as_ref().to_string()))
             .collect::<HashMap<_, _>>();
         self.envs = envs;
-        self 
+        self
     }
 }
 
@@ -88,7 +91,7 @@ impl SupervisorBuilder {
 
     /// Add a worker process marked as a daemon.
     ///
-    /// Daemon worker processes are restarted if they exit without being 
+    /// Daemon worker processes are restarted if they exit without being
     /// explicitly shutdown by the supervisor.
     pub fn add_daemon(mut self, task: Task) -> Self {
         self.commands.push((task, true));
@@ -205,26 +208,18 @@ fn spawn_worker(task: Task, daemon: bool, socket_path: PathBuf) {
     let id = format!("{:x}", hasher.finish());
 
     thread::spawn(move || {
-        let mut child = Command::new(task.cmd.clone())
+        // Setup built in environment variables
+        let mut envs = task.envs.clone();
+        envs.insert(WORKER_ID.to_string(), id.clone());
+        envs.insert(
+            SOCKET.to_string(),
+            socket_path.to_string_lossy().into_owned(),
+        );
+
+        let child = Command::new(task.cmd.clone())
             .args(task.args.clone())
-            .envs(task.envs.clone())
-            .stdin(Stdio::piped())
+            .envs(envs)
             .spawn()?;
-
-        let child_stdin = child.stdin.as_mut().unwrap();
-
-        /*
-        let info = WorkerInfo {
-            path: socket_path.clone(),
-            id: id.clone(),
-        }
-        */
-
-        child_stdin.write_all(
-            format!("{}\n{}\n", id.clone(), socket_path.to_string_lossy()).as_bytes(),
-        )?;
-
-        drop(child_stdin);
 
         let pid = child.id();
         {
@@ -264,7 +259,8 @@ fn spawn_worker(task: Task, daemon: bool, socket_path: PathBuf) {
 async fn listen<P: AsRef<Path>>(
     socket: P,
     tx: Sender<()>,
-    handler: Arc<Box<dyn Fn(UnixStream) + Send + Sync>>) -> Result<()> {
+    handler: Arc<Box<dyn Fn(UnixStream) + Send + Sync>>,
+) -> Result<()> {
     let path = socket.as_ref();
 
     // If the socket file exists we must remove to prevent `EADDRINUSE`

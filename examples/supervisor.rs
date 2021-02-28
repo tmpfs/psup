@@ -1,10 +1,10 @@
-use psup::{Error, Result, Task, SupervisorBuilder};
+use futures::stream::StreamExt;
+use psup::{Error, Result, SupervisorBuilder, Task};
+use serde::{Deserialize, Serialize};
 use tokio::io::AsyncWriteExt;
 use tokio_util::codec::{FramedRead, LinesCodec};
-use futures::stream::StreamExt;
-use serde::{Deserialize, Serialize};
 
-use log::{info, error, debug};
+use log::{debug, error, info};
 
 use async_trait::async_trait;
 use json_rpc2::{
@@ -12,8 +12,8 @@ use json_rpc2::{
     Request, Response,
 };
 
-/// Encodes whether an IPC message is a request or 
-/// a response so that we can do bi-directional 
+/// Encodes whether an IPC message is a request or
+/// a response so that we can do bi-directional
 /// communication over the same socket.
 #[derive(Debug, Serialize, Deserialize)]
 pub enum Message {
@@ -64,53 +64,53 @@ async fn main() -> Result<()> {
     let worker_cmd = "cargo";
     let args = vec!["run", "--example", "worker"];
     let supervisor = SupervisorBuilder::new(Box::new(|stream| {
-            let (reader, mut writer) = stream.into_split();
-            tokio::task::spawn(async move {
-                let service: Box<
-                    dyn Service<Data = ()>,
-                > = Box::new(SupervisorService {});
-                let server = Server::new(vec![&service]);
+        let (reader, mut writer) = stream.into_split();
+        tokio::task::spawn(async move {
+            let service: Box<dyn Service<Data = ()>> =
+                Box::new(SupervisorService {});
+            let server = Server::new(vec![&service]);
 
-                let mut lines = FramedRead::new(reader, LinesCodec::new());
-                while let Some(line) = lines.next().await {
-                    let line = line.map_err(Error::boxed)?;
-                    match serde_json::from_str::<Message>(&line).map_err(Error::boxed)? {
-                        Message::Request(mut req) => {
-                            debug!("{:?}", req);
-                            let res = server
-                                .serve(&mut req, &())
-                                .await;
-                            debug!("{:?}", res);
-                            if let Some(response) = res {
-                                let msg = Message::Response(response);
-                                writer
-                                    .write_all(
-                                        format!(
-                                            "{}\n",
-                                            serde_json::to_string(&msg).map_err(Error::boxed)?
-                                        )
-                                        .as_bytes(),
+            let mut lines = FramedRead::new(reader, LinesCodec::new());
+            while let Some(line) = lines.next().await {
+                let line = line.map_err(Error::boxed)?;
+                match serde_json::from_str::<Message>(&line)
+                    .map_err(Error::boxed)?
+                {
+                    Message::Request(mut req) => {
+                        debug!("{:?}", req);
+                        let res = server.serve(&mut req, &()).await;
+                        debug!("{:?}", res);
+                        if let Some(response) = res {
+                            let msg = Message::Response(response);
+                            writer
+                                .write_all(
+                                    format!(
+                                        "{}\n",
+                                        serde_json::to_string(&msg)
+                                            .map_err(Error::boxed)?
                                     )
-                                    .await?;
-                            }
+                                    .as_bytes(),
+                                )
+                                .await?;
                         }
-                        Message::Response(reply) => {
-                            // Currently not handling RPC replies so just log them
-                            if let Some(err) = reply.error() {
-                                error!("{:?}", err);
-                            } else {
-                                debug!("{:?}", reply);
-                            }
+                    }
+                    Message::Response(reply) => {
+                        // Currently not handling RPC replies so just log them
+                        if let Some(err) = reply.error() {
+                            error!("{:?}", err);
+                        } else {
+                            debug!("{:?}", reply);
                         }
                     }
                 }
-                Ok::<(), Error>(())
-            });
-        }))
-        .path(std::env::temp_dir().join("supervisor.sock"))
-        .add_daemon(Task::new(worker_cmd).args(args.clone()))
-        .add_daemon(Task::new(worker_cmd).args(args.clone()))
-        .build();
+            }
+            Ok::<(), Error>(())
+        });
+    }))
+    .path(std::env::temp_dir().join("supervisor.sock"))
+    .add_daemon(Task::new(worker_cmd).args(args.clone()))
+    .add_daemon(Task::new(worker_cmd).args(args.clone()))
+    .build();
     supervisor.run().await?;
 
     loop {

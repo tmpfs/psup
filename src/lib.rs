@@ -5,8 +5,8 @@
 //!
 //! ## Supervisor
 //!
-//! Supervisor manages child processes sending socket information over stdin and then switching 
-//! to Unix domain sockets for inter-process communication. Daemon processes are restarted if 
+//! Supervisor manages child processes sending socket information using the environment and then switching
+//! to Unix domain sockets for inter-process communication. Daemon processes are restarted if
 //! they die without being shutdown by the supervisor.
 //!
 //! ```ignore
@@ -28,17 +28,17 @@
 //!    Ok(())
 //! }
 //! ```
-//! 
+//!
 //! ## Worker
 //!
-//! Worker reads the socket information from stdin and then connects to the Unix socket.
+//! Worker reads the socket information from the environment and then connects to the Unix socket.
 //!
 //! ```ignore
 //! use psup::{Result, worker};
-//! 
+//!
 //! #[tokio::main]
 //! async fn main() -> Result<()> {
-//!     // Read supervisor information from stdin
+//!     // Read supervisor information from the environment 
 //!     // and set up the IPC channel with the supervisor
 //!     let worker = Worker::new(|stream| {
 //!         let (reader, mut writer) = stream.into_split();
@@ -50,12 +50,19 @@
 //! }
 //! ```
 
-use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 /// Enumeration of errors.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    /// Worker is missing the id environment variable.
+    #[error("Worker PSUP_WORKER_ID variable is not set")]
+    WorkerNoId,
+
+    /// Worker is missing the socket path environment variable.
+    #[error("Worker PSUP_SOCKET variable is not set")]
+    WorkerNoSocket,
+
     /// Input/output errors.
     #[error(transparent)]
     Io(#[from] std::io::Error),
@@ -83,14 +90,17 @@ impl Error {
 /// Result type returned by the library.
 pub type Result<T> = std::result::Result<T, Error>;
 
-mod worker;
+pub(crate) const WORKER_ID: &str = "PSUP_WORKER_ID";
+pub(crate) const SOCKET: &str = "PSUP_SOCKET";
+
 mod supervisor;
+mod worker;
 
+pub use supervisor::{Supervisor, SupervisorBuilder, Task};
 pub use worker::Worker;
-pub use supervisor::{Task, Supervisor, SupervisorBuilder};
 
-/// Message sent over stdin when launching a worker.
-#[derive(Debug, Serialize, Deserialize)]
+/// Message sent to worker handlers.
+#[derive(Debug)]
 pub struct WorkerInfo {
     /// Socket path.
     pub path: PathBuf,

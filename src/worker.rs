@@ -1,24 +1,24 @@
 //! Worker is a process performing a long-running task.
-use std::path::PathBuf;
-use std::io::{self, BufRead};
 use futures::Future;
+use std::path::PathBuf;
 use tokio::net::UnixStream;
-use super::{WorkerInfo, Result};
+
+use super::{Error, Result, WorkerInfo, SOCKET, WORKER_ID};
 
 /// Worker process handler.
-pub struct Worker<H, F> 
-    where
-        H: Fn(UnixStream, WorkerInfo) -> F,
-        F: Future<Output = Result<()>> {
-
+pub struct Worker<H, F>
+where
+    H: Fn(UnixStream, WorkerInfo) -> F,
+    F: Future<Output = Result<()>>,
+{
     handler: H,
 }
 
 impl<H, F> Worker<H, F>
-    where
-        H: Fn(UnixStream, WorkerInfo) -> F,
-        F: Future<Output = Result<()>> {
-
+where
+    H: Fn(UnixStream, WorkerInfo) -> F,
+    F: Future<Output = Result<()>>,
+{
     /// Create a new worker.
     pub fn new(handler: H) -> Self {
         Self { handler }
@@ -33,25 +33,15 @@ impl<H, F> Worker<H, F>
         Ok(())
     }
 
-    /// Read worker information from stdin.
+    /// Read worker information from the environment.
     fn read(&self) -> Result<Option<WorkerInfo>> {
-        let stdin = io::stdin();
-        let mut id = None;
-        let mut path = None;
-        for line in stdin.lock().lines() {
-            if let Some(line) = line.ok() {
-                if id.is_none() {
-                    id = Some(line);
-                } else {
-                    path = Some(line);
-                }
-            }
-
-            if id.is_some() && path.is_some() {
-                break;
-            }
-        }
-        Ok(Some(WorkerInfo {id: id.unwrap(), path: PathBuf::from(path.unwrap())}))
+        let id = std::env::var(WORKER_ID)
+            .or_else(|_| Err(Error::WorkerNoId))?
+            .to_string();
+        let path = PathBuf::from(
+            std::env::var(SOCKET).or_else(|_| Err(Error::WorkerNoSocket))?,
+        );
+        Ok(Some(WorkerInfo { id, path }))
     }
 
     /// Connect to the supervisor socket.
@@ -61,4 +51,3 @@ impl<H, F> Worker<H, F>
         Ok(())
     }
 }
-
