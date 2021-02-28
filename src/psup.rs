@@ -31,7 +31,6 @@ struct RunTask {
     envs: Option<HashMap<String, String>>,
     /// Daemonize the process, will be restarted on exit.
     daemon: Option<bool>,
-    //detached: Option<bool>,
 }
 
 impl Into<Task> for RunTask {
@@ -40,7 +39,6 @@ impl Into<Task> for RunTask {
             .args(self.args.unwrap_or(Vec::new()))
             .envs(self.envs.unwrap_or(HashMap::new()))
             .daemon(self.daemon.unwrap_or(false))
-            .detached(self.detached.unwrap_or(false))
     }
 }
 
