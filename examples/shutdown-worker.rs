@@ -1,4 +1,5 @@
 use std::sync::Mutex;
+use serde::{Deserialize, Serialize};
 
 use once_cell::sync::OnceCell;
 use async_trait::async_trait;
@@ -10,16 +11,16 @@ use json_rpc2::{
 };
 
 use psup_impl::{Error, Result, Worker};
-use psup_json_rpc::{serve, notify, write, Connected};
+use psup_json_rpc::{serve, call, notify, write, Connected};
 
-fn worker_state() -> &'static Mutex<WorkerState> {
+fn worker_state(id: Option<String>) -> &'static Mutex<WorkerState> {
     static INSTANCE: OnceCell<Mutex<WorkerState>> = OnceCell::new();
-    INSTANCE.get_or_init(|| Mutex::new(WorkerState { id: 0 }))
+    INSTANCE.get_or_init(|| Mutex::new(WorkerState { id: id.unwrap_or(Default::default()) }))
 }
 
 #[derive(Debug)]
 struct WorkerState {
-    id: usize,
+    id: String,
 }
 
 struct WorkerService;
@@ -29,10 +30,22 @@ impl Service for WorkerService {
     type Data = Mutex<WorkerState>;
     async fn handle(
         &self,
-        _req: &mut Request,
-        _ctx: &Self::Data,
+        req: &mut Request,
+        ctx: &Self::Data,
     ) -> json_rpc2::Result<Option<Response>> {
-        Ok(None)
+        let mut response = None;
+        if req.matches("conected") {
+            let state = ctx.lock().unwrap();
+            info!("Child service connected {}", state.id);
+            response = Some(req.into());
+
+            /*
+            } else if req.matches(SHUTDOWN) {
+                info!("Child going down now.");
+                response = Some(req.into());
+            */
+        }
+        Ok(response)
     }
 }
 
@@ -46,12 +59,12 @@ async fn main() -> Result<()> {
     let worker = Worker::new().client(|stream, id| async {
         let (reader, mut writer) = tokio::io::split(stream);
 
-        // Send a notification to the supervisor so that it knows
-        // this worker is ready, if we wanted a reply we can build 
-        // the message using `psup_json_rpc::call()`.
+        worker_state(Some(id.to_string()));
+
         let params =
             serde_json::to_value(Connected { id }).map_err(Error::boxed)?;
-        let req = notify("connected", Some(params));
+        // Use `call()` so we get a reply from the server.
+        let req = call("connected", Some(params));
         write(&mut writer, &req).await?;
 
         //let mut lines = FramedRead::new(reader, LinesCodec::new());
@@ -60,13 +73,19 @@ async fn main() -> Result<()> {
         let server = Server::new(vec![&service]);
         serve::<Mutex<WorkerState>, _, _, _, _, _>(
             server,
-            worker_state(),
+            worker_state(None),
             reader,
             writer,
             |req| info!("{:?}", req),
             |res| info!("{:?}", res),
-            |reply, _| {
-                info!("{:?}", reply);
+            |reply, writer| {
+                let state = worker_state(None).lock().unwrap();
+                let id = state.id.clone();
+                println!("Got an answer from the service {}", id);
+                //info!("{:?}", reply);
+                //let params = serde_json::to_value(Connected { id }).map_err(Box::new)?;
+                //let req = notify("shutdown", Some(params));
+                //write(writer, &req).await?;
                 //Ok(())
             },
         )

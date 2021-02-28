@@ -53,7 +53,10 @@ async fn main() -> Result<()> {
                     writer,
                     |req| info!("{:?}", req),
                     |res| info!("{:?}", res),
-                    |reply| info!("{:?}", reply),
+                    |reply, _| {
+                        info!("{:?}", reply);
+                        //Ok(())
+                    },
                 )
                 .await?;
                 Ok::<(), Error>(())

@@ -1,6 +1,6 @@
 //! Adapter for the process supervisor (psup) to serve JSON-RPC over a split socket.
 #![deny(missing_docs)]
-use futures::stream::StreamExt;
+use futures::{Future, stream::StreamExt};
 use json_rpc2::{futures::Server, Request, Response};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -81,7 +81,8 @@ where
     S: Send + Sync,
     I: Fn(&Request),
     O: Fn(&Response),
-    A: Fn(Response),
+    A: Fn(Response, &mut WriteHalf<W>),
+    //F: Future<Output = Result<()>>,
 {
     let mut lines = FramedRead::new(reader, LinesCodec::new());
     while let Some(line) = lines.next().await {
@@ -97,7 +98,8 @@ where
                 }
             }
             Message::Response(reply) => {
-                (answer)(reply);
+                //(answer)(reply, &mut writer).await?;
+                (answer)(reply, &mut writer);
             }
         }
     }
