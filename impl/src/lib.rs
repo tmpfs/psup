@@ -9,17 +9,21 @@
 //! to Unix domain sockets for inter-process communication. Daemon processes are restarted if
 //! they die without being shutdown by the supervisor.
 //!
-//! ```ignore
-//! use psup::{Result, Task, SupervisorBuilder};
+//! ```no_run
+//! use psup_impl::{Error, Result, Error, Task, SupervisorBuilder};
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<()> {
 //!    let worker_cmd = "worker-process";
 //!    let supervisor = SupervisorBuilder::new()
 //!        .server(|stream, tx| {
-//!            let (reader, mut writer) = stream.into_split();
-//!            // Handle worker connections here
-//!            // Use the `tx` channel to spawn and shutdown workers
+//!             let (reader, mut writer) = stream.into_split();
+//!             tokio::task::spawn(async move {
+//!                 // Handle worker connection here
+//!                 // Use the `tx` supervisor control channel 
+//!                 // to spawn and shutdown workers
+//!                 Ok::<(), Error>(())
+//!             });
 //!        })
 //!        .path(std::env::temp_dir().join("supervisor.sock"))
 //!        .add_worker(Task::new(worker_cmd).daemon(true))
@@ -35,17 +39,18 @@
 //!
 //! Worker reads the socket information from the environment and then connects to the Unix socket.
 //!
-//! ```ignore
-//! use psup::{Result, worker};
+//! ```no_run
+//! use psup_impl::{Error, Result, Worker};
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<()> {
 //!     // Read supervisor information from the environment 
 //!     // and set up the IPC channel with the supervisor
 //!     let worker = Worker::new()
-//!         .client(|stream| {
+//!         .client(|stream, id| async {
 //!             let (reader, mut writer) = stream.into_split();
 //!             // Start sending messages to the supervisor
+//!             Ok::<(), Error>(())
 //!         });
 //!     worker.run().await?;
 //!     // Block the process here and do your work.
