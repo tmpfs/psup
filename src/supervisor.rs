@@ -16,7 +16,9 @@ use log::{error, info, warn};
 use once_cell::sync::OnceCell;
 use rand::Rng;
 
-use super::{Result, SOCKET, WORKER_ID};
+use super::{Result, SOCKET, WORKER_ID, DETACHED};
+
+type IpcHandler = Box<dyn Fn(UnixStream) + Send + Sync>;
 
 /// Get the supervisor state.
 fn supervisor_state() -> &'static Mutex<SupervisorState> {
@@ -31,6 +33,7 @@ pub struct Task {
     args: Vec<String>,
     envs: HashMap<String, String>,
     daemon: bool,
+    detached: bool,
 }
 
 impl Task {
@@ -41,6 +44,7 @@ impl Task {
             args: Vec::new(),
             envs: HashMap::new(),
             daemon: false,
+            detached: false,
         }
     }
 
@@ -74,18 +78,26 @@ impl Task {
         self.daemon = flag;
         self
     }
+
+    /// Set the detached flag for the worker command.
+    ///
+    /// If a worker is detached it will not connect to the IPC socket.
+    pub fn detached(mut self, flag: bool) -> Self {
+        self.detached = flag;
+        self
+    }
 }
 
 /// Build a supervisor.
 pub struct SupervisorBuilder {
     socket: PathBuf,
     commands: Vec<Task>,
-    ipc_handler: Box<dyn Fn(UnixStream) + Send + Sync>,
+    ipc_handler: IpcHandler,
 }
 
 impl SupervisorBuilder {
     /// Create a new supervisor builder.
-    pub fn new(ipc_handler: Box<dyn Fn(UnixStream) + Send + Sync>) -> Self {
+    pub fn new(ipc_handler: IpcHandler) -> Self {
         let socket = std::env::temp_dir().join("psup.sock");
         Self {
             socket,
@@ -120,7 +132,7 @@ impl SupervisorBuilder {
 pub struct Supervisor {
     socket: PathBuf,
     commands: Vec<Task>,
-    ipc_handler: Arc<Box<dyn Fn(UnixStream) + Send + Sync>>,
+    ipc_handler: Arc<IpcHandler>,
 }
 
 impl Supervisor {
@@ -219,6 +231,7 @@ fn spawn_worker(task: Task, socket: PathBuf) {
             SOCKET.to_string(),
             socket.to_string_lossy().into_owned(),
         );
+        envs.insert(DETACHED.to_string(), task.detached.to_string());
 
         let child = Command::new(task.cmd.clone())
             .args(task.args.clone())
@@ -261,7 +274,7 @@ fn spawn_worker(task: Task, socket: PathBuf) {
 async fn listen<P: AsRef<Path>>(
     socket: P,
     tx: Sender<()>,
-    handler: Arc<Box<dyn Fn(UnixStream) + Send + Sync>>,
+    handler: Arc<IpcHandler>,
 ) -> Result<()> {
     let path = socket.as_ref();
 

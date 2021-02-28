@@ -3,7 +3,7 @@ use futures::Future;
 use std::path::PathBuf;
 use tokio::net::UnixStream;
 
-use super::{Error, Result, WorkerInfo, SOCKET, WORKER_ID};
+use super::{Error, Result, WorkerInfo, SOCKET, WORKER_ID, DETACHED};
 
 /// Worker process handler.
 pub struct Worker<H, F>
@@ -33,10 +33,16 @@ where
         let path = PathBuf::from(
             std::env::var(SOCKET).or_else(|_| Err(Error::WorkerNoSocket))?,
         );
-        let info = WorkerInfo {id, path};
-        // Connect to the supervisor socket
-        let stream = UnixStream::connect(&info.path).await?;
-        (self.handler)(stream, info).await?;
+
+        let detached = std::env::var(DETACHED).map(|s| s == "true")
+            .or_else(|_| Err(Error::WorkerNoDetached))?;
+        println!("Worker is detached {:?}", detached);
+        if !detached {
+            let info = WorkerInfo {id, path};
+            // Connect to the supervisor socket
+            let stream = UnixStream::connect(&info.path).await?;
+            (self.handler)(stream, info).await?;
+        }
         Ok(())
     }
 }
