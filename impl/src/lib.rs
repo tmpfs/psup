@@ -78,17 +78,6 @@ pub enum Error {
     Boxed(#[from] Box<dyn std::error::Error + Send + Sync>),
 }
 
-impl Error {
-    /// Helper function to `Box` an error implementation.
-    ///
-    /// Ssocket handlers can call `map_err(Error::boxed)?` to propagate
-    /// foreign errors.
-    pub fn boxed(e: impl std::error::Error + Send + Sync + 'static) -> Self {
-        let err: Box<dyn std::error::Error + Send + Sync> = Box::new(e);
-        Error::from(err)
-    }
-}
-
 /// Result type returned by the library.
 pub type Result<T> = std::result::Result<T, Error>;
 

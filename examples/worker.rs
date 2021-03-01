@@ -50,7 +50,7 @@ async fn main() -> Result<()> {
         // this worker is ready, if we wanted a reply we can build 
         // the message using `psup_json_rpc::call()`.
         let params =
-            serde_json::to_value(Identity { id }).map_err(Error::boxed)?;
+            serde_json::to_value(Identity { id }).map_err(Box::from)?;
         let req = notify("connected", Some(params));
         write(&mut writer, &req).await?;
 

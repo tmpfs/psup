@@ -55,7 +55,7 @@ async fn main() -> Result<()> {
         worker_state(Some(id.to_string()));
 
         let params =
-            serde_json::to_value(Identity { id }).map_err(Error::boxed)?;
+            serde_json::to_value(Identity { id }).map_err(Box::from)?;
         // Use `call()` so we get a reply from the server.
         let req = call("connected", Some(params));
         write(&mut writer, &req).await?;
