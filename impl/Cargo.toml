@@ -1,6 +1,6 @@
 [package]
 name = "psup-impl"
-version = "0.5.0"
+version = "0.5.1"
 authors = ["muji <muji@tmpfs.org>"]
 edition = "2018"
 description = "Process supervisor with inter-process communication over tokio Unix sockets"
@@ -13,5 +13,5 @@ thiserror = "1"
 futures = "0.3"
 rand = "0.8"
 log = "0.4"
-tokio = { version = "1", features = ["rt", "net", "sync", "process", "macros", "rt-multi-thread"] }
+tokio = { version = "1", features = ["rt", "net", "sync", "process", "macros", "rt-multi-thread", "time"] }
 once_cell = "1.7"

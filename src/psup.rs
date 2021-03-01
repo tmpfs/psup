@@ -31,6 +31,8 @@ struct RunTask {
     daemon: Option<bool>,
     /// Limit for restarting daemon processes.
     retry_limit: Option<usize>,
+    /// Delay factor for restarting daemon processes.
+    retry_factor: Option<usize>,
 }
 
 impl Into<Task> for RunTask {
@@ -40,6 +42,7 @@ impl Into<Task> for RunTask {
             .envs(self.envs.unwrap_or(HashMap::new()))
             .daemon(self.daemon.unwrap_or(false))
             .retry_limit(self.retry_limit.unwrap_or(5))
+            .retry_factor(self.retry_factor.unwrap_or(0))
     }
 }
 

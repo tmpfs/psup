@@ -27,8 +27,8 @@ clap = "2"
 toml = "0.5"
 log = "0.4"
 pretty_env_logger = "0.4"
-#psup-impl = { version = "0.5", path = "impl" }
-psup-impl = "0.5"
+psup-impl = { version = "0.5", path = "impl" }
+#psup-impl = "0.5"
 
 [dev-dependencies]
 futures = "0.3"

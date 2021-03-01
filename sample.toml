@@ -4,6 +4,7 @@ socket = "/tmp/sample.sock"
 command = "cat"
 daemon = true
 
-#[[task]]
-#command = "false"
-#daemon = true
+[[task]]
+command = "false"
+daemon = true
+retry-factor = 250

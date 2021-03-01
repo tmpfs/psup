@@ -5,6 +5,7 @@ use std::{
     io,
     path::{Path, PathBuf},
     sync::Arc,
+    time::Duration,
 };
 
 use tokio::{
@@ -12,6 +13,7 @@ use tokio::{
     process::Command,
     sync::oneshot::{self, Sender},
     sync::{mpsc, Mutex},
+    time,
 };
 
 use log::{error, info, warn};
@@ -55,6 +57,7 @@ pub struct Task {
     daemon: bool,
     detached: bool,
     limit: usize,
+    factor: usize,
 }
 
 impl Task {
@@ -67,6 +70,7 @@ impl Task {
             daemon: false,
             detached: false,
             limit: 5,
+            factor: 0,
         }
     }
 
@@ -129,10 +133,20 @@ impl Task {
         self
     }
 
+    /// Set the retry factor in milliseconds.
+    ///
+    /// The default value is `0` which means retry attempts 
+    /// are performed immediately.
+    pub fn retry_factor(mut self, factor: usize) -> Self {
+        self.factor = factor;
+        self
+    }
+
     /// Get a retry state for this task.
     fn retry(&self) -> Retry {
         Retry {
             limit: self.limit,
+            factor: self.factor,
             attempts: 0,
         }
     }
@@ -143,6 +157,8 @@ struct Retry {
     /// The limit on the number of times to attempt
     /// to restart a process.
     limit: usize,
+    /// The retry delay factor in milliseconds.
+    factor: usize,
     /// The current number of attempts.
     attempts: usize,
 }
@@ -324,7 +340,7 @@ impl PartialEq for WorkerState {
 impl Eq for WorkerState {}
 
 /// Attempt to restart a worker that died.
-fn restart(worker: WorkerState, mut retry: Retry) {
+async fn restart(worker: WorkerState, mut retry: Retry) {
     info!("Restarting worker {}", worker.id);
     retry.attempts = retry.attempts + 1;
 
@@ -334,7 +350,11 @@ fn restart(worker: WorkerState, mut retry: Retry) {
             worker.id, retry.limit
         );
     } else {
-        // TODO: retry on fail with backoff and retry limit
+        if retry.factor > 0 {
+            let ms = retry.attempts * retry.factor; 
+            info!("Delay restart {}ms", ms);
+            time::sleep(Duration::from_millis(ms as u64)).await;
+        }
         spawn_worker(worker.task, worker.socket, retry)
     }
 }
@@ -406,7 +426,7 @@ fn spawn_worker(task: Task, socket: PathBuf, retry: Retry) {
                             if let Some(worker) = worker {
                                 info!("Removed child worker (id: {}, pid {})", worker.id, pid);
                                 if !worker.reap && worker.task.daemon {
-                                    restart(worker, retry);
+                                    restart(worker, retry).await;
                                 }
                             } else {
                                 if !reaping {
