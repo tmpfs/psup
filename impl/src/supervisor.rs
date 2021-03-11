@@ -248,8 +248,10 @@ impl Supervisor {
                             }
                         }
                         Message::Spawn { task } => {
+                            // FIXME: return the id to the caller?
+                            let id = id();
                             let retry = task.retry();
-                            spawn_worker(task, control_socket.clone(), retry);
+                            spawn_worker(id, task, control_socket.clone(), retry);
                         }
                     }
                 }
@@ -274,9 +276,11 @@ impl Supervisor {
     }
 
     /// Spawn a worker task.
-    pub fn spawn(&self, task: Task) {
+    pub fn spawn(&self, task: Task) -> String {
+        let id = id();
         let retry = task.retry();
-        spawn_worker(task, self.socket.clone(), retry);
+        spawn_worker(id.clone(), task, self.socket.clone(), retry);
+        id
     }
 
     /*
@@ -286,12 +290,6 @@ impl Supervisor {
         state.workers.iter()
             .map(|w| (w.id.clone(), w.pid))
             .collect::<HashMap<_, _>>()
-    }
-    */
-
-    /*
-    pub fn shutdown(&self) {
-
     }
     */
 }
@@ -355,17 +353,18 @@ async fn restart(worker: WorkerState, mut retry: Retry) {
             info!("Delay restart {}ms", ms);
             time::sleep(Duration::from_millis(ms as u64)).await;
         }
-        spawn_worker(worker.task, worker.socket, retry)
+        spawn_worker(worker.id, worker.task, worker.socket, retry)
     }
 }
 
-fn spawn_worker(task: Task, socket: PathBuf, retry: Retry) {
-    // Generate a unique id for each worker
+fn id() -> String {
     let mut rng = rand::thread_rng();
     let mut hasher = DefaultHasher::new();
     hasher.write_usize(rng.gen());
-    let id = format!("{:x}", hasher.finish());
+    format!("{:x}", hasher.finish())
+}
 
+fn spawn_worker(id: String, task: Task, socket: PathBuf, retry: Retry) {
     tokio::task::spawn(async move {
         // Setup built in environment variables
         let mut envs = task.envs.clone();
@@ -394,8 +393,8 @@ fn spawn_worker(task: Task, socket: PathBuf, retry: Retry) {
 
         {
             let worker = WorkerState {
-                task,
                 id: id.clone(),
+                task,
                 socket,
                 pid,
                 reap: false,
