@@ -39,7 +39,7 @@ tokio-util = {version = "0.6", features = ["codec"]}
 json-rpc2 = {version= "0.9", features = ["async"]}
 serde = {version = "1", features = ["derive"]}
 serde_json = "1"
-psup-json-rpc = { version = "0.5", path = "json_rpc" }
+psup-json-rpc = { version = "0.6", path = "json_rpc" }
 
 [profile.release]
 lto = true
