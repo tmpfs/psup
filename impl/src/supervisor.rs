@@ -11,7 +11,7 @@ use std::{
 use tokio::{
     net::{UnixListener, UnixStream},
     process::Command,
-    sync::oneshot::{self, error::TryRecvError, Sender},
+    sync::oneshot::{self, Sender},
     sync::{mpsc, Mutex},
     time,
 };
@@ -219,7 +219,7 @@ impl SupervisorBuilder {
             socket: self.socket,
             commands: self.commands,
             ipc_handler: self.ipc_handler.map(Arc::new),
-            shutdown: self.shutdown.map(|rx| Arc::new(Mutex::new(rx))),
+            shutdown: self.shutdown,
         }
     }
 }
@@ -229,14 +229,14 @@ pub struct Supervisor {
     socket: PathBuf,
     commands: Vec<Task>,
     ipc_handler: Option<Arc<IpcHandler>>,
-    shutdown: Option<Arc<Mutex<oneshot::Receiver<()>>>>,
+    shutdown: Option<oneshot::Receiver<()>>,
 }
 
 impl Supervisor {
     /// Start the supervisor running.
     ///
     /// Listens on the socket path and starts any initial workers.
-    pub async fn run(&self) -> Result<()> {
+    pub async fn run(&mut self) -> Result<()> {
         // Set up the server listener and control channel.
         if let Some(ref ipc_handler) = self.ipc_handler {
             let socket = self.socket.clone();
@@ -247,24 +247,14 @@ impl Supervisor {
             let handler = Arc::clone(ipc_handler);
 
             // Handle global shutdown signal, kills all the workers
-            if let Some(ref shutdown) = self.shutdown {
-                let signal = Arc::clone(shutdown);
+            if let Some(shutdown) = self.shutdown.take() {
                 tokio::spawn(async move {
-                    let mut rx = signal.lock().await;
-                    loop {
-                        match rx.try_recv() {
-                            Ok(_) => {
-                                let mut state = supervisor_state().lock().await;
-                                let workers = state.workers.drain(..);
-                                for worker in workers {
-                                    let tx = worker.shutdown.clone();
-                                    let _ = tx.send(worker).await;
-                                }
-                                break;
-                            }
-                            Err(TryRecvError::Closed) => break,
-                            _ => {}
-                        }
+                    let _ = shutdown.await;
+                    let mut state = supervisor_state().lock().await;
+                    let workers = state.workers.drain(..);
+                    for worker in workers {
+                        let tx = worker.shutdown.clone();
+                        let _ = tx.send(worker).await;
                     }
                 });
             }
