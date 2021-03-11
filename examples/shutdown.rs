@@ -57,7 +57,7 @@ async fn main() -> Result<()> {
 
     let worker_cmd = "cargo";
     let args = vec!["run", "--example", "shutdown-worker"];
-    let mut supervisor = SupervisorBuilder::new()
+    let supervisor = SupervisorBuilder::new()
         .server(|stream, tx| {
             let (reader, writer) = tokio::io::split(stream);
             tokio::task::spawn(async move {
