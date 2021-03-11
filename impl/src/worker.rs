@@ -20,24 +20,27 @@ where
 {
     /// Create a new worker.
     pub fn new() -> Self {
-        Self { handler: None, relaxed: false }
+        Self {
+            handler: None,
+            relaxed: false,
+        }
     }
 
     /// Set the relaxed flag.
     ///
     /// When a worker is relaxed it will start with or without a supervisor.
     ///
-    /// The default is `false` so workers expect to be run in the context 
-    /// of a supervisor and it is an error if no worker id is available in 
+    /// The default is `false` so workers expect to be run in the context
+    /// of a supervisor and it is an error if no worker id is available in
     /// the environment.
     ///
     /// When this flag is enabled and the required environment variables
     /// do not exist the worker does not attempt to connect to a supervisor.
     ///
-    /// Use this mode of operation when a worker process can be run standalone 
+    /// Use this mode of operation when a worker process can be run standalone
     /// or as a worker for a supervisor process.
     pub fn relaxed(mut self, flag: bool) -> Self {
-        self.relaxed = flag; 
+        self.relaxed = flag;
         self
     }
 
@@ -64,7 +67,7 @@ where
             } else {
                 if !self.relaxed {
                     return Err(Error::WorkerNoId);
-                } 
+                }
             }
         }
         Ok(())

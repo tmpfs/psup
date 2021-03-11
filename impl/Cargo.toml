@@ -1,6 +1,6 @@
 [package]
 name = "psup-impl"
-version = "0.6.0"
+version = "0.6.1"
 authors = ["muji <muji@tmpfs.org>"]
 edition = "2018"
 description = "Process supervisor with inter-process communication over tokio Unix sockets"

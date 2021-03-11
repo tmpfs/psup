@@ -11,7 +11,7 @@ use std::{
 use tokio::{
     net::{UnixListener, UnixStream},
     process::Command,
-    sync::oneshot::{self, Sender},
+    sync::oneshot::{self, error::TryRecvError, Sender},
     sync::{mpsc, Mutex},
     time,
 };
@@ -135,7 +135,7 @@ impl Task {
 
     /// Set the retry factor in milliseconds.
     ///
-    /// The default value is `0` which means retry attempts 
+    /// The default value is `0` which means retry attempts
     /// are performed immediately.
     pub fn retry_factor(mut self, factor: usize) -> Self {
         self.factor = factor;
@@ -168,6 +168,7 @@ pub struct SupervisorBuilder {
     socket: PathBuf,
     commands: Vec<Task>,
     ipc_handler: Option<IpcHandler>,
+    shutdown: Option<oneshot::Receiver<()>>,
 }
 
 impl SupervisorBuilder {
@@ -178,6 +179,7 @@ impl SupervisorBuilder {
             socket,
             commands: Vec::new(),
             ipc_handler: None,
+            shutdown: None,
         }
     }
 
@@ -202,12 +204,22 @@ impl SupervisorBuilder {
         self
     }
 
+    /// Register a shutdown handler with the supervisor.
+    ///
+    /// When a message is received on the shutdown receiver all
+    /// managed processes are killed.
+    pub fn shutdown(mut self, rx: oneshot::Receiver<()>) -> Self {
+        self.shutdown = Some(rx);
+        self
+    }
+
     /// Return the supervisor.
     pub fn build(self) -> Supervisor {
         Supervisor {
             socket: self.socket,
             commands: self.commands,
             ipc_handler: self.ipc_handler.map(Arc::new),
+            shutdown: self.shutdown.map(|rx| Arc::new(Mutex::new(rx))),
         }
     }
 }
@@ -217,6 +229,7 @@ pub struct Supervisor {
     socket: PathBuf,
     commands: Vec<Task>,
     ipc_handler: Option<Arc<IpcHandler>>,
+    shutdown: Option<Arc<Mutex<oneshot::Receiver<()>>>>,
 }
 
 impl Supervisor {
@@ -232,6 +245,29 @@ impl Supervisor {
             let (control_tx, mut control_rx) = mpsc::channel::<Message>(1024);
             let (tx, rx) = oneshot::channel::<()>();
             let handler = Arc::clone(ipc_handler);
+
+            // Handle global shutdown signal, kills all the workers
+            if let Some(ref shutdown) = self.shutdown {
+                let signal = Arc::clone(shutdown);
+                tokio::spawn(async move {
+                    let mut rx = signal.lock().await;
+                    loop {
+                        match rx.try_recv() {
+                            Ok(_) => {
+                                let mut state = supervisor_state().lock().await;
+                                let workers = state.workers.drain(..);
+                                for worker in workers {
+                                    let tx = worker.shutdown.clone();
+                                    let _ = tx.send(worker).await;
+                                }
+                                break;
+                            }
+                            Err(TryRecvError::Closed) => break,
+                            _ => {}
+                        }
+                    }
+                });
+            }
 
             tokio::spawn(async move {
                 while let Some(msg) = control_rx.recv().await {
@@ -251,7 +287,12 @@ impl Supervisor {
                             // FIXME: return the id to the caller?
                             let id = id();
                             let retry = task.retry();
-                            spawn_worker(id, task, control_socket.clone(), retry);
+                            spawn_worker(
+                                id,
+                                task,
+                                control_socket.clone(),
+                                retry,
+                            );
                         }
                     }
                 }
@@ -349,7 +390,7 @@ async fn restart(worker: WorkerState, mut retry: Retry) {
         );
     } else {
         if retry.factor > 0 {
-            let ms = retry.attempts * retry.factor; 
+            let ms = retry.attempts * retry.factor;
             info!("Delay restart {}ms", ms);
             time::sleep(Duration::from_millis(ms as u64)).await;
         }
