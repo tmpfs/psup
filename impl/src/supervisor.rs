@@ -193,8 +193,8 @@ impl SupervisorBuilder {
     }
 
     /// Set the socket path.
-    pub fn path(mut self, path: PathBuf) -> Self {
-        self.socket = path;
+    pub fn path<P: AsRef<Path>>(mut self, path: P) -> Self {
+        self.socket = path.as_ref().to_path_buf();
         self
     }
 
