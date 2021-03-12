@@ -87,5 +87,5 @@ pub(crate) const SOCKET: &str = "PSUP_SOCKET";
 mod supervisor;
 mod worker;
 
-pub use supervisor::{Message, Supervisor, SupervisorBuilder, Task};
+pub use supervisor::{Message, Supervisor, SupervisorBuilder, Task, id};
 pub use worker::Worker;

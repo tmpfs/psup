@@ -388,7 +388,8 @@ async fn restart(worker: WorkerState, mut retry: Retry) {
     }
 }
 
-fn id() -> String {
+/// Generate a random opaque identifier.
+pub fn id() -> String {
     let mut rng = rand::thread_rng();
     let mut hasher = DefaultHasher::new();
     hasher.write_usize(rng.gen());
